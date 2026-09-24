@@ -1,0 +1,61 @@
+Y,X,state,Lat,Lon,official_name,owner_operator,closest_city,match_confidence,research_note
+35288901,-101575034,Texas - 1,35.289,-101.575,Fermi America Advanced Energy and Intelligence Campus (Project Matador),Fermi America,Panhandle,high,Major Fermi America campus near Amarillo/Panhandle.
+3917949,-85896024,Indiana - 1,39.179,-85.896,DartPoints CLU01 – Columbus,DartPoints,Columbus,high,DartPoints Columbus facility.
+38889302,-82100506,West Virginia,38.889,-82.101,Point Pleasant data-center project,Not publicly disclosed,Point Pleasant,low,Public sources do not confidently identify an operating company at the exact coordinate.
+39387012,-84564907,Ohio - 1,39.387,-84.565,CenterGrid Hamilton Data Center,CenterGrid (Vora Group),Hamilton,medium,Publicly reported CenterGrid Hamilton-area facility.
+37790226,-77431501,Virginia - 1,37.79,-77.432,Hanover Technology Park,Tract,Ashland,medium,Large data-center development campus in Hanover County.
+32495963,-91636214,Louisiana,32.496,-91.636,Meta Hyperion Data Center Campus,Meta,Rayville,high,Meta Hyperion campus in northeast Louisiana.
+39287199,-112463972,Utah,39.287,-112.464,MercuryDelta Data Center and Electrical Generating Facility,"Fibernet MercuryDelta, LLC",Delta,medium,Public project filing identifies MercuryDelta / Fibernet.
+30962462,-102845272,Texas - 2,30.962,-102.845,Pecos County data-center campus,"Amazon Data Services, Inc.",Fort Stockton,medium,Best public match in the Fort Stockton/Pecos County corridor; several projects are nearby.
+3499344,-90034117,Mississippi,34.993,-90.034,xAI Colossus / Southaven-area campus,xAI,Southaven,medium,Best public match for the north Mississippi / Memphis-area AI data-center cluster.
+4171548,-88465393,Illinois - 1,41.715,-88.465,Project Cardinal Data Center Campus,Pioneer Development LLC,Yorkville,high,Public Yorkville data-center development.
+33428337,-112725673,Arizona,33.428,-112.726,Buckeye Tech Corridor,Tract,Buckeye,high,Tract data-center campus in Buckeye.
+41459219,-88060298,Illinois - 2,41.459,-88.06,Joliet Technology Center,PowerHouse Data Centers / Hillwood,Joliet,high,Large Joliet data-center campus.
+41035558,-104801437,Wyoming,41.036,-104.801,Microsoft Bison Business Park Data Center,Microsoft,Cheyenne,medium,Best public facility match in Cheyenne.
+4005758,-86540225,Indiana - 2,40.058,-86.54,Meta Lebanon Data Center,Meta,Lebanon,high,"Meta data center in Lebanon, Indiana."
+32631364,-100539364,Texas  - 3,32.631,-100.539,IREN Sweetwater Data Center,IREN,Sweetwater,medium,Best public match in the Sweetwater area.
+32542862,-99546511,Texas  - 4 ,32.543,-99.547,Vantage Frontier TX3 Data Center Campus,Vantage Data Centers,Abilene,high,Vantage Frontier campus east of Abilene.
+390099,-77463252,Virginia - 2,39.01,-77.463,CloudHQ LC1,CloudHQ,Ashburn,high,CloudHQ Loudoun County facility.
+32505085,-99779704,Texas - 5,32.505,-99.78,Stargate Abilene,Crusoe / Lancium (Oracle tenant),Abilene,high,Stargate AI campus in Abilene.
+41030754,-85053443,Indiana - 3,41.031,-85.053,Google Fort Wayne Data Center,Google,Fort Wayne,high,Google Fort Wayne data center.
+41739181,-87534538,Illinois - 3,41.739,-87.535,Digital Crossroad – nearest public facility match,Digital Crossroad,Chicago,low,Coordinate is in the Chicago metro; exact facility/operator match is not fully confirmed.
+35018366,-101308974,Texas - 6,35.018,-101.309,Llano Project Data Center,Not publicly confirmed,Claude,low,"Public construction/project references exist, but operator ownership is not confidently established."
+3199482,-106363367,Texas - 7,31.995,-106.363,Meta El Paso Data Center,Meta,El Paso,high,Meta data center campus in El Paso.
+41728513,-86120488,Indiana - 3,41.729,-86.12,Microsoft St. Joseph County Data Center Campus,Microsoft,Mishawaka,medium,Microsoft has publicly documented St. Joseph County data-center development.
+42228252,-83437076,Michigan,42.228,-83.437,US Signal Detroit / Belleville Data Center,US Signal,Belleville,high,US Signal Detroit-area facility in Belleville.
+31967609,-96513711,Texas - 8,31.968,-96.514,Riot Platforms Corsicana Data Center,Riot Platforms,Corsicana,high,Riot Corsicana campus.
+41680829,-93534547,Iowa,41.681,-93.535,Meta Altoona Data Center,Meta,Altoona,high,Meta Altoona campus.
+39912807,-83723718,Ohio - 2,39.913,-83.724,5C CMH01 AI Data Center Campus (PrimeOhio),5C Data Centers / 5C Group,Springfield,medium,Best public match for the Springfield/PrimeOhio development.
+329363,-8382183,Georgia - 1,32.936,-83.822,Rumble Technology Park,Cloverleaf Infrastructure,Forsyth,medium,Best public match for the Monroe County / Forsyth data-center development.
+38013642,-77495813,Virginia - 3,38.014,-77.496,CleanArc VA-1 Campus,CleanArc Data Centers,Ruther Glen,medium,Best public match in Caroline County.
+32492279,-99782282,Texas - 9,32.492,-99.782,Crusoe Abilene Campus,Crusoe (Microsoft tenant),Abilene,medium,Public Crusoe/Microsoft Abilene AI infrastructure match.
+37713705,-7761179,Virginia - 4 ,37.714,-77.612,Tuckahoe Technology Park,Tract,Rockville,medium,Tract campus in the western Richmond/Henrico area.
+39539214,-119493869,Nevada,39.539,-119.494,Novva Data Centers – Tahoe Reno,Novva Data Centers,Sparks,medium,Nearest major public facility match in the Tahoe-Reno industrial corridor.
+40136563,-82718944,Ohio - 3,40.137,-82.719,Meta New Albany Data Center,Meta,Johnstown,medium,Best public match in the New Albany/Johnstown cluster.
+33774444,-100869076,Texas - 10,33.774,-100.869,Galaxy Helios I,Galaxy Digital,Afton,high,Galaxy Helios campus in Dickens County.
+3910259,-94306323,Missouri,39.103,-94.306,Nebius AI Data Center – Independence,Nebius,Independence,medium,Publicly reported Nebius project in Independence.
+38219361,-77476669,Virginia - 5,38.219,-77.477,AWS IAD450,Amazon Web Services,Fredericksburg,high,AWS facility in the Fredericksburg/Spotsylvania area.
+39909274,-82550586,Ohio - 4,39.909,-82.551,Microsoft Hebron Data Center – area match,Microsoft,Hebron,medium,Best public match in the Hebron/Licking County cluster.
+34388929,-100046262,Texas - 11,34.389,-100.046,IREN Childress,IREN,Childress,high,IREN Childress data-center campus.
+48146227,-103774395,North Dakota,48.146,-103.774,Atlas Power Data Center – Williston,Atlas Power,Williston,medium,Best public match in the Williston area.
+30574396,-97080704,Texas - 12,30.574,-97.081,Blueprint Projects Data Center,BPP Projects LLC,Taylor,medium,Public Taylor development southeast of town.
+31828629,-96778642,Texas - 13,31.829,-96.779,Freestone Data Center,C1 Freestone 1 LLC / Paile LLC,Hubbard,medium,Public property/project records identify the Freestone site and related entities.
+29415791,-9879675,Texas - 14,29.416,-98.797,Vantage San Antonio Data Center – nearest public campus match,Vantage Data Centers,San Antonio,medium,Nearest major public data-center campus match.
+3366741,-116134729,California - 1,33.667,-116.135,Coachella Data Center & Microgrid proposal,DMK Project Solutions Services (proposal),Coachella,low,Proposal-stage match; exact future operator not publicly confirmed.
+39551462,-89896896,Illinois - 4,39.551,-89.897,Virden-area data-center site,Not confidently identified,Virden,low,No sufficiently reliable public source found for an exact facility/operator at this coordinate.
+32929772,-100217068,Texas - 15,32.93,-100.217,Hamlin-area data-center site,Not confidently identified,Hamlin,low,No sufficiently reliable public source found for an exact facility/operator at this coordinate.
+30571253,-96259596,Texas - 16,30.571,-96.26,College Station-area data-center site,Not confidently identified,College Station,low,No sufficiently reliable public source found for an exact facility/operator at this coordinate.
+39132337,-94880339,Kansas,39.132,-94.88,Project Red Wolf,Red Wolf DCD Properties LLC,Kansas City,high,"Public project filings match this Kansas City, Kansas coordinate."
+39703005,-80849409,Ohio - 5,39.703,-80.849,Hannibal-area data-center site,Not confidently identified,Hannibal,low,No sufficiently reliable public source found for an exact facility/operator at this coordinate.
+30566119,-97071239,Texas - 17,30.566,-97.071,KDC / Project Comal,KDC,Taylor,medium,Best public match for the second Taylor-area data-center project.
+33872814,-101840221,Texas - 18,33.873,-101.84,LBB01 Data Center,Aligned Data Centers (property) / Lambda (tenant),Abernathy,high,Public property and tenant reporting identify the Lubbock-area campus.
+41583559,-8669592,Indiana - 4,41.584,-86.696,Thomas Rose Industrial Park Data Center,Not publicly confirmed,La Porte,low,Nearest named public data-center site; operating company is not confidently confirmed.
+3437504,-85044477,Georgia - 2,34.375,-85.044,Adairsville-area data-center project,Not confidently identified,Adairsville,low,Project match is uncertain; kept explicit rather than assigning an unsupported operator.
+33172897,-11552351,California - 2,33.173,-115.524,Imperial Valley data-center site A,Not confidently identified,Calipatria,low,Public sources do not confidently identify the operating company at the exact coordinate.
+33172883,-115531097,California - 3,33.173,-115.531,Imperial Valley data-center site B,Not confidently identified,Calipatria,low,Public sources do not confidently identify the operating company at the exact coordinate.
+32398365,-100915261,Texas - 19,32.398,-100.915,Barber Lake Data Center,Not publicly confirmed,Colorado City,medium,Named project/site match; public operator attribution remains unclear.
+31464147,-99556221,Texas - 20,31.464,-99.556,Central Texas data-center site,Not confidently identified,Eden,low,No sufficiently reliable public source found for an exact facility/operator at this coordinate.
+35777147,-80975634,North Carolina,35.777,-80.976,Statesville-area data-center site,Not confidently identified,Statesville,low,No sufficiently reliable public source found for an exact facility/operator at this coordinate.
+40897178,-84552378,Ohio - 6,40.897,-84.552,Van Wert-area data-center site,Not confidently identified,Van Wert,low,No sufficiently reliable public source found for an exact facility/operator at this coordinate.
+43358918,-78604177,New York,43.359,-78.604,Lake Mariner Data Center,TeraWulf,Barker,high,TeraWulf Lake Mariner campus.
+33448499,-8452256,Georgia - 3,33.448,-84.523,QTS Fayetteville / Fairwater Atlanta campus,QTS Data Centers (Microsoft tenant),Fayetteville,high,QTS campus associated with Microsoft Fairwater Atlanta infrastructure.

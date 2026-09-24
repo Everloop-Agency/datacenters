@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>US Data Center Climate Risk Explorer</title>
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.145/Build/Cesium/Cesium.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.145/Build/Cesium/Widgets/widgets.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
+  <link href="styles.css" rel="stylesheet" />
+</head>
+<body>
+  <div id="cesiumContainer"></div>
+
+  <section id="panel" aria-label="Data center climate risk controls">
+    <div class="eyebrow">Physical climate risk</div>
+    <h1>US Data Center Climate Risk Explorer</h1>
+    <p class="intro">Select a site to inspect mapped flood hazard and historical wildfire perimeters within 10 km, with 3D terrain and nearby buildings.</p>
+
+    <label class="field-label" for="siteSelect">Data center</label>
+    <select id="siteSelect" aria-label="Select data center"></select>
+
+    <div id="siteSummary" class="site-summary">Select a marker or use the menu.</div>
+
+    <div class="actions">
+      <button id="overviewBtn" type="button">US overview</button>
+      <button id="siteViewBtn" type="button" disabled>Selected 3D view</button>
+    </div>
+
+    <div class="toggles">
+      <label><input id="flood1Toggle" type="checkbox" checked /> 1% annual-chance flood area</label>
+      <label><input id="flood02Toggle" type="checkbox" checked /> 0.2% annual-chance flood area</label>
+      <label><input id="wildfireToggle" type="checkbox" checked /> Historical wildfire perimeters</label>
+      <label><input id="buildingsToggle" type="checkbox" checked /> 3D buildings</label>
+      <label><input id="satelliteToggle" type="checkbox" checked /> Satellite imagery</label>
+      <label><input id="radiusToggle" type="checkbox" checked /> 10 km boundary</label>
+    </div>
+
+    <div id="status" role="status">Loading sites…</div>
+    <div id="configWarning" class="warning" hidden></div>
+  </section>
+
+  <div id="hoverCard" hidden></div>
+
+  <div id="legend">
+    <div><span class="swatch flood1"></span> 1% annual-chance flood area</div>
+    <div><span class="swatch flood02"></span> 0.2% annual-chance flood area</div>
+    <div><span class="swatch wildfire"></span> Historical wildfire perimeter</div>
+    <small>Flood and wildfire polygons are clipped to 10 km around the selected site. Flood polygons show mapped hazard extent, not modeled water depth. Historical wildfire coverage varies by place and reporting period.</small>
+  </div>
+
+  <script src="public-config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
