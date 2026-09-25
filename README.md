@@ -8,14 +8,14 @@ Marker coordinates are taken **only** from the original user file `Datacentre_co
 
 ## Map modes
 
-- **ANALYTICAL** — terrain, 3D buildings, satellite basemap, mapped 1% / 0.2% annual-chance flood hazard polygons and historical wildfire perimeters.
+- **ANALYTICAL** — terrain, 3D buildings, satellite basemap, one combined **Flood risk** control (1% + 0.2% annual-chance flood extents) and historical wildfire perimeters.
 - **REALISTIC** — Google Photorealistic 3D for visual inspection of the selected/search location. There are **no real-time flood or wildfire feeds** in this project. Switch to ANALYTICAL for hazard overlays.
 
 ## Historical/static hazard loading
 
 There is no 10 km boundary and no polygon clipping. Hazard polygons are streamed for the current visible map area in small cached cells. When a data center/search result is selected, the application also ensures the surrounding selected-site cells are queried so the local flood map does not disappear because of camera framing.
 
-Flood requests use the same simple bounding-box GeoJSON query structure used in the earlier working Texas version; geometry-simplification parameters that could suppress or invalidate flood geometry have been removed.
+Flood requests use the same simple bounding-box GeoJSON query structure used in the earlier working Texas version; geometry-simplification parameters that could suppress or invalidate flood geometry have been removed. For the Stargate Abilene location (32.505, -99.780) and other focused locations inside Abilene, the app uses the official City of Abilene `City_of_Abilene_Flood_Zones` FeatureServer used by the standalone Abilene project (layer 1 = 100-year / 1%; layer 0 = 500-year / 0.2%). Both flood extents are controlled by the single **Flood risk** switch. Other locations continue to use the existing national flood source through the Cloudflare worker.
 
 Wildfire uses historical perimeter datasets only. The recent/current wildfire feed has been removed.
 

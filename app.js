@@ -13,6 +13,12 @@
   const US_BOUNDS = { west: -125.2, south: 24.1, east: -66.0, north: 50.2 };
   const TEXAS_BOUNDS = { west: -106.7, south: 25.7, east: -93.4, north: 36.6 };
   const CALIFORNIA_BOUNDS = { west: -124.6, south: 32.3, east: -114.0, north: 42.2 };
+  // Official City of Abilene flood zones used by the standalone Abilene project.
+  // When the focused location is inside this footprint, these local layers replace
+  // the generic national flood query for the flood-risk overlay.
+  const ABILENE_FLOOD_BOUNDS = { west: -99.96, south: 32.26, east: -99.53, north: 32.71 };
+  const ABILENE_FLOOD_SERVICE =
+    "https://services6.arcgis.com/iBFmWI3dYPQqS1KF/arcgis/rest/services/City_of_Abilene_Flood_Zones/FeatureServer";
 
   const els = {
     select: document.getElementById("siteSelect"),
@@ -21,8 +27,7 @@
     warning: document.getElementById("configWarning"),
     overview: document.getElementById("overviewBtn"),
     siteView: document.getElementById("siteViewBtn"),
-    flood1: document.getElementById("flood1Toggle"),
-    flood02: document.getElementById("flood02Toggle"),
+    floodRisk: document.getElementById("floodRiskToggle"),
     wildfire: document.getElementById("wildfireToggle"),
     buildings: document.getElementById("buildingsToggle"),
     satellite: document.getElementById("satelliteToggle"),
@@ -203,8 +208,9 @@
   }
 
   function setAnalyticalHazardVisibility(show) {
-    if (flood1Source) flood1Source.show = show && els.flood1.checked;
-    if (flood02Source) flood02Source.show = show && els.flood02.checked;
+    const floodVisible = show && els.floodRisk.checked;
+    if (flood1Source) flood1Source.show = floodVisible;
+    if (flood02Source) flood02Source.show = floodVisible;
     if (wildfireSource) wildfireSource.show = show && els.wildfire.checked;
   }
 
@@ -710,9 +716,67 @@
     return ds;
   }
 
-  async function loadFloodForCells(cells) {
-    if (!els.flood1.checked && !els.flood02.checked) return { flood1: [], flood02: [], errors: [] };
+  function pointInsideBounds(location, bounds) {
+    return Boolean(location) &&
+      Number(location.lon) >= bounds.west && Number(location.lon) <= bounds.east &&
+      Number(location.lat) >= bounds.south && Number(location.lat) <= bounds.north;
+  }
+
+  function intersectionBbox(a, b) {
+    const out = {
+      west: Math.max(a.west, b.west),
+      south: Math.max(a.south, b.south),
+      east: Math.min(a.east, b.east),
+      north: Math.min(a.north, b.north)
+    };
+    return out.east > out.west && out.north > out.south ? out : null;
+  }
+
+  async function fetchAbileneFloodLayer(layerId, bbox) {
+    const clipped = intersectionBbox(bbox, ABILENE_FLOOD_BOUNDS);
+    if (!clipped) return [];
+    const q = new URLSearchParams({
+      where: "1=1",
+      geometry: `${clipped.west},${clipped.south},${clipped.east},${clipped.north}`,
+      geometryType: "esriGeometryEnvelope",
+      inSR: "4326",
+      spatialRel: "esriSpatialRelIntersects",
+      outFields: "*",
+      returnGeometry: "true",
+      outSR: "4326",
+      f: "geojson"
+    });
+    const response = await fetch(`${ABILENE_FLOOD_SERVICE}/${layerId}/query?${q.toString()}`);
+    if (!response.ok) throw new Error(`Abilene flood service HTTP ${response.status}`);
+    const geo = await response.json();
+    if (geo?.error) throw new Error(geo.error.message || "Abilene flood query error");
+    return Array.isArray(geo?.features) ? geo.features : [];
+  }
+
+  async function loadFloodForCells(cells, bbox) {
+    if (!els.floodRisk.checked) return { flood1: [], flood02: [], errors: [], source: "off" };
     const errors = [];
+
+    // Stargate Abilene / local Abilene searches use exactly the official City of
+    // Abilene 100-year and 500-year layers from the standalone Abilene project.
+    if (pointInsideBounds(activeFocusLocation(), ABILENE_FLOOD_BOUNDS)) {
+      try {
+        const [flood1, flood02] = await Promise.all([
+          fetchAbileneFloodLayer(1, bbox),
+          fetchAbileneFloodLayer(0, bbox)
+        ]);
+        return {
+          flood1: dedupeFeatures(flood1, "abilene-100"),
+          flood02: dedupeFeatures(flood02, "abilene-500"),
+          errors,
+          source: "City of Abilene"
+        };
+      } catch (error) {
+        errors.push(error.message);
+        // Fall through to the existing national flood source so the layer still works.
+      }
+    }
+
     const chunks = await mapLimit(cells, 5, async cell => {
       const key = cellKey("flood", cell);
       try {
@@ -732,7 +796,7 @@
       if (isFiveHundredYear(p)) flood02.push(feature);
       else if (isOnePercentFlood(p)) flood1.push(feature);
     }
-    return { flood1, flood02, errors };
+    return { flood1, flood02, errors, source: "national" };
   }
 
   async function loadWildfireForCells(cells, bbox) {
@@ -779,7 +843,8 @@
         : "current map view";
     const floodError = floodResult.errors.length ? `; flood warnings: ${[...new Set(floodResult.errors)].slice(0, 2).join(" | ")}` : "";
     const fireError = fireResult.errors.length ? `; wildfire warnings: ${[...new Set(fireResult.errors)].slice(0, 2).join(" | ")}` : "";
-    setStatus(`${locationText}: ${floodResult.flood1.length} one-percent + ${floodResult.flood02.length} 0.2-percent flood polygons; ${fireResult.features.length} historical wildfire perimeters; ${cells.length} cached/query cells${floodError}${fireError}`);
+    const floodSource = floodResult.source === "City of Abilene" ? " · City of Abilene source" : "";
+    setStatus(`${locationText}: Flood risk ${floodResult.flood1.length} one-percent + ${floodResult.flood02.length} 0.2-percent polygons${floodSource}; ${fireResult.features.length} historical wildfire perimeters; ${cells.length} cached/query cells${floodError}${fireError}`);
   }
 
   async function refreshHazardsForView() {
@@ -808,7 +873,7 @@
     setStatus(`Loading mapped flood hazard + historical wildfire data for the current view…`);
 
     const [floodResult, fireResult] = await Promise.all([
-      loadFloodForCells(cells),
+      loadFloodForCells(cells, bbox),
       loadWildfireForCells(cells, bbox)
     ]);
 
@@ -819,8 +884,8 @@
     flood1Source = await makeFloodSource(floodResult.flood1, Cesium.Color.fromCssColorString("#1487ff").withAlpha(0.55));
     wildfireSource = await makeWildfireSource(fireResult.features);
 
-    if (flood1Source) flood1Source.show = els.flood1.checked;
-    if (flood02Source) flood02Source.show = els.flood02.checked;
+    if (flood1Source) flood1Source.show = els.floodRisk.checked;
+    if (flood02Source) flood02Source.show = els.floodRisk.checked;
     if (wildfireSource) wildfireSource.show = els.wildfire.checked;
 
     lastFloodCounts = { flood1: floodResult.flood1.length, flood02: floodResult.flood02.length };
@@ -1037,13 +1102,11 @@
       button.addEventListener("click", () => setViewMode(button.dataset.viewMode, { manual: true }));
     });
 
-    els.flood1.addEventListener("change", () => {
-      if (flood1Source) flood1Source.show = els.flood1.checked;
-      if (!flood1Source && els.flood1.checked) scheduleHazardRefresh(20);
-    });
-    els.flood02.addEventListener("change", () => {
-      if (flood02Source) flood02Source.show = els.flood02.checked;
-      if (!flood02Source && els.flood02.checked) scheduleHazardRefresh(20);
+    els.floodRisk.addEventListener("change", () => {
+      const visible = els.floodRisk.checked;
+      if (flood1Source) flood1Source.show = visible;
+      if (flood02Source) flood02Source.show = visible;
+      if (!flood1Source && !flood02Source && visible) scheduleHazardRefresh(20);
     });
     els.wildfire.addEventListener("change", () => {
       if (wildfireSource) wildfireSource.show = els.wildfire.checked;
