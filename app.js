@@ -16,11 +16,9 @@
   // PLAY TOUR CONFIGURATION — edit these three names to choose the datacenters shown by Play.
   // Use the exact `officialName` values from data/datacenters.json.
   const PLAY_DATACENTER_NAMES = [
-    "California - 1",
-    "Louisiana",
-     "Indiana - 1",
+    "Meta El Paso Data Center",
     "Stargate Abilene",
-    "Mississippi"
+    "Hanover Technology Park"
   ];
   const PLAY_DWELL_MS = 4500;
   const PLAY_ZOOM_OUT_KM = 180;
@@ -1671,22 +1669,26 @@
         els.riskWidget.style.top = `${Math.max(0, Math.min(maxTop, start.top + dy))}px`;
       });
       const finish = event => {
-          if (!start) return;
+        if (!start) return;
 
-          riskWidgetDraggedRecently = start.moved;
-          start = null;
+        riskWidgetDraggedRecently = start.moved;
+        start = null;
+        els.riskWidget.classList.remove("dragging");
 
-          els.riskWidget.classList.remove("dragging");
+        // Remember where the user placed the collapsed icon.
+        if (els.riskWidget.classList.contains("collapsed")) {
+          const rect = els.riskWidget.getBoundingClientRect();
+          riskWidgetCollapsedPosition = {
+            left: rect.left,
+            top: rect.top
+          };
+        }
 
-          // Remember where the user placed the collapsed icon.
-          if (els.riskWidget.classList.contains("collapsed")) {
-            const rect = els.riskWidget.getBoundingClientRect();
-
-            riskWidgetCollapsedPosition = {
-              left: rect.left,
-              top: rect.top
-            };
-          }
+        try { handle.releasePointerCapture?.(event.pointerId); } catch (_) {}
+        if (riskWidgetDraggedRecently) {
+          setTimeout(() => { riskWidgetDraggedRecently = false; }, 180);
+        }
+      };
       handle.addEventListener("pointerup", finish);
       handle.addEventListener("pointercancel", finish);
     }
