@@ -1302,7 +1302,7 @@
     // Restore the original blue data-center pins from the datacenters project.
     const pinBuilder = new Cesium.PinBuilder();
     const pinImage = pinBuilder
-      .fromColor(Cesium.Color.fromCssColorString("#9f7497"), 38)
+      .fromColor(Cesium.Color.fromCssColorString("#9f7497"), 57)
       .toDataURL();
 
     for (const site of sites) {
@@ -1314,7 +1314,7 @@
           image: pinImage,
           verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          scaleByDistance: new Cesium.NearFarScalar(5.0e4, 1.15, 6.0e6, 0.45)
+          scaleByDistance: new Cesium.NearFarScalar(5.0e4, 1.6, 6.0e6, 0.65)
         }
       });
       entity.dcMeta = site;
