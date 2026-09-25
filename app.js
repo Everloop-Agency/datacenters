@@ -17,13 +17,13 @@
   // PLAY TOUR CONFIGURATION — add as many locations as you want.
   // Each entry may be either an exact `officialName` or exact `stateLabel` from data/datacenters.json.
   const PLAY_DATACENTER_NAMES = [
+    "Buckeye Tech Corridor",
     "Coachella Data Center & Microgrid proposal",
     "DartPoints CLU01 – Columbus",
     "Meta Hyperion Data Center Campus",
     "Stargate Abilene",
-    "Buckeye Tech Corridor",
   ];
-  const PLAY_DWELL_MS = 7000;
+  const PLAY_DWELL_MS = 9000;
   const PLAY_ZOOM_OUT_KM = 180;
 
   // Automatically switch to high-detail Google Photorealistic 3D only at very close zoom.
