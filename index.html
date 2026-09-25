@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>US Data Center Climate Risk Explorer</title>
   <script src="https://cesium.com/downloads/cesiumjs/releases/1.145/Build/Cesium/Cesium.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <link href="https://cesium.com/downloads/cesiumjs/releases/1.145/Build/Cesium/Widgets/widgets.css" rel="stylesheet" />
   <link href="styles.css" rel="stylesheet" />
 </head>
@@ -18,7 +19,7 @@
   <section id="panel" aria-label="Data center climate risk controls">
     <div class="eyebrow">Physical climate risk</div>
     <h1>US Data Center Climate Risk Explorer</h1>
-    <p class="intro">Select a data center to view flood risk and historical wildfire perimeters on the satellite map.</p>
+    <p class="intro">Select a data center to view combined current + historical flood evidence and historical wildfire perimeters.</p>
 
     <label class="field-label" for="siteSelect">Data center</label>
     <select id="siteSelect" aria-label="Select data center"></select>
@@ -60,7 +61,7 @@
   <div id="legend">
     <div><span class="swatch floodRisk"></span> Flood risk map</div>
     <div><span class="swatch wildfire"></span> Historical wildfire perimeter</div>
-    <small id="legendNote">Flood risk is a single control combining 1% annual-chance, 0.2% annual-chance, and lower-hazard/susceptibility polygons where available. Wildfire perimeters are loaded independently.</small>
+    <small id="legendNote">Flood risk combines all available flood zones and historical flood evidence. Return periods/probabilities are intentionally not separated. All flood sources load directly from the providers; no Cloudflare flood proxy is used.</small>
   </div>
 
   <footer id="footer">
