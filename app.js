@@ -23,7 +23,7 @@
     "Meta Hyperion Data Center Campus",
     "Stargate Abilene",
   ];
-  const PLAY_DWELL_MS = 10000;
+  const PLAY_DWELL_MS = 12000;
   const PLAY_ZOOM_OUT_KM = 180;
 
   // Automatically switch to high-detail Google Photorealistic 3D only at very close zoom.
