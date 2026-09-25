@@ -163,6 +163,7 @@
   let auto3DActive = false;
   let auto3DSwitching = false;
   let riskWidgetDraggedRecently = false;
+  let riskWidgetCollapsedPosition = null;
 
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, c => ({
@@ -235,10 +236,57 @@
   }
 
   function setRiskWidgetCollapsed(collapsed) {
-    if (!els.riskWidget) return;
-    els.riskWidget.classList.toggle("collapsed", Boolean(collapsed));
+  if (!els.riskWidget) return;
+
+  const isCurrentlyCollapsed =
+    els.riskWidget.classList.contains("collapsed");
+
+  // Before opening the large Scenario analysis panel,
+  // remember exactly where the small icon was.
+  if (!collapsed && isCurrentlyCollapsed) {
+    const rect = els.riskWidget.getBoundingClientRect();
+
+    riskWidgetCollapsedPosition = {
+      left: rect.left,
+      top: rect.top
+    };
+  }
+
+  els.riskWidget.classList.toggle("collapsed", Boolean(collapsed));
+
+  if (collapsed && riskWidgetCollapsedPosition) {
+    // After closing the panel, put the icon back
+    // exactly where it was before opening.
+    requestAnimationFrame(() => {
+      const rect = els.riskWidget.getBoundingClientRect();
+
+      const left = Math.max(
+        0,
+        Math.min(
+          window.innerWidth - rect.width,
+          riskWidgetCollapsedPosition.left
+        )
+      );
+
+      const top = Math.max(
+        0,
+        Math.min(
+          window.innerHeight - rect.height,
+          riskWidgetCollapsedPosition.top
+        )
+      );
+
+      els.riskWidget.style.left = `${left}px`;
+      els.riskWidget.style.top = `${top}px`;
+      els.riskWidget.style.right = "auto";
+      els.riskWidget.style.bottom = "auto";
+    });
+  } else if (!collapsed) {
+    // The expanded window may need to move temporarily
+    // so that the whole heatmap remains visible.
     requestAnimationFrame(clampRiskWidgetToViewport);
   }
+}
 
   async function loadRiskScores(location) {
     const generation = ++riskRequestGeneration;
@@ -1621,13 +1669,22 @@
         els.riskWidget.style.top = `${Math.max(0, Math.min(maxTop, start.top + dy))}px`;
       });
       const finish = event => {
-        if (!start) return;
-        riskWidgetDraggedRecently = start.moved;
-        start = null;
-        els.riskWidget.classList.remove("dragging");
-        try { handle.releasePointerCapture?.(event.pointerId); } catch (_) {}
-        if (riskWidgetDraggedRecently) setTimeout(() => { riskWidgetDraggedRecently = false; }, 180);
-      };
+          if (!start) return;
+
+          riskWidgetDraggedRecently = start.moved;
+          start = null;
+
+          els.riskWidget.classList.remove("dragging");
+
+          // Remember where the user placed the collapsed icon.
+          if (els.riskWidget.classList.contains("collapsed")) {
+            const rect = els.riskWidget.getBoundingClientRect();
+
+            riskWidgetCollapsedPosition = {
+              left: rect.left,
+              top: rect.top
+            };
+          }
       handle.addEventListener("pointerup", finish);
       handle.addEventListener("pointercancel", finish);
     }
