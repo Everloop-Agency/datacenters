@@ -80,7 +80,7 @@ The panel is anchored in the upper-right of the map. On desktop its expanded siz
 
 The rating conversion and cell colors are copied from the Cotton Risk Management implementation. API responses are cached in the browser for the current session.
 
-### Cloudflare is used only for this WeatherTradeNet API call
+### Cloudflare is used for WeatherTradeNet risk scores and the restricted Cesium browser token
 
 Flood and wildfire remain direct-to-provider and are unchanged.
 
@@ -92,7 +92,7 @@ https://data-centers.everloop.workers.dev/api/hazards?lat=...&lon=...
 
 The WeatherTradeNet API key is **not** stored in this repository or sent to the browser.
 
-To enable the route on the existing `data-centers` Worker, follow `cloudflare/RISK_API_SETUP.md` and merge `cloudflare/hazards-proxy-snippet.js` into the existing Worker.
+A complete, deployable Worker is included as `cloudflare/worker.js`. Setup instructions are in `cloudflare/CLOUDFLARE_SETUP.txt`. No real credentials are stored in this repository.
 
 ## Google Satellite 2D and optional photorealistic 3D
 
@@ -104,12 +104,7 @@ The 2D Google imagery and 3D tiles use the latest imagery/content currently publ
 
 ### Cloudflare requirement
 
-Keep the WeatherTradeNet risk-score proxy unchanged. Add the small `/api/cesium-token` route supplied in:
-
-- `cloudflare/CESIUM_GOOGLE_SETUP.md`
-- `cloudflare/cesium-token-route.js`
-
-No flood or wildfire data is routed through Cloudflare.
+The complete Worker, including both `/api/hazards` and `/api/cesium-token`, is supplied as `cloudflare/worker.js`. Follow `cloudflare/CLOUDFLARE_SETUP.txt` to configure the required Cloudflare secrets/variables. No flood or wildfire data is routed through Cloudflare.
 
 
 ## Map scale and distance measurement
