@@ -1,3 +1,46 @@
+# US Data Center Climate Risk Explorer — simplified map build
+
+This build intentionally removes the 3D/geospatial stack that was causing failures in the datacenters project.
+
+## Kept
+- Original data-center locations, names and owners from `data/datacenters.json`
+- Texas - 7 as the default startup site
+- Esri World Imagery satellite basemap (same simple basemap pattern as the working Abilene project)
+- One `Flood risk map` control
+- Historical wildfire perimeters
+- US overview, selected-site navigation, marker hover, and location search
+
+## Removed from the map runtime
+- Cesium World Terrain
+- Cesium OSM Buildings / 3D buildings
+- Google Photorealistic 3D
+- REALISTIC / ANALYTICAL mode switching
+- Cloudflare `/api/map-config`, `/api/3d-assets`, `/api/diagnostics`
+- FEMA `MapServer/export` image tiles that were timing out
+
+## Flood sources
+- **Texas - 7 / El Paso:** City of El Paso `Planning/FloodZone` FeatureServer, queried directly as GeoJSON.
+- **Abilene sites:** the same City of Abilene 100-year and 500-year FeatureServer layers used by the standalone Abilene project.
+- **Other US sites:** FEMA NFHL layer 28 queried as GeoJSON polygons (not image-export tiles).
+
+The one Flood risk checkbox controls the combined flood layers. Styling distinguishes 1%, 0.2%, and lower-hazard/susceptibility polygons where the source exposes those classes.
+
+## Wildfire sources
+- Texas: Texas A&M Forest Service historic wildfire perimeters (1988–2025).
+- Other states: WFIGS interagency wildfire perimeters.
+
+## Run locally
+
+```bash
+python3 -m http.server 8000
+```
+
+Open:
+
+```text
+http://localhost:8000
+```
+
 # US Data Center Climate Risk Explorer
 
 Cesium application for the 60 user-supplied US data-center coordinates, enriched with facility names and owner/operator information.

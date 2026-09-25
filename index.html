@@ -18,7 +18,7 @@
   <section id="panel" aria-label="Data center climate risk controls">
     <div class="eyebrow">Physical climate risk</div>
     <h1>US Data Center Climate Risk Explorer</h1>
-    <p class="intro">Use <b>ANALYTICAL</b> mode for mapped flood hazard and historical wildfire assessment, or <b>REALISTIC</b> mode for Google Photorealistic 3D around the selected location.</p>
+    <p class="intro">Select a data center to view flood risk and historical wildfire perimeters on the satellite map.</p>
 
     <label class="field-label" for="siteSelect">Data center</label>
     <select id="siteSelect" aria-label="Select data center"></select>
@@ -36,19 +36,12 @@
 
     <div class="actions">
       <button id="overviewBtn" type="button">US overview</button>
-      <button id="siteViewBtn" type="button">Selected 3D view</button>
+      <button id="siteViewBtn" type="button">Selected site</button>
     </div>
-
-    <div class="mode-switch" role="group" aria-label="Map view mode">
-      <button type="button" data-view-mode="realistic" aria-pressed="false">REALISTIC</button>
-      <button type="button" data-view-mode="analytical" class="active" aria-pressed="true">ANALYTICAL</button>
-    </div>
-    <div id="modeStatus" class="mode-status">ANALYTICAL · World Terrain + 3D Buildings</div>
 
     <div class="toggles analytical-toggles">
       <label><input id="floodRiskToggle" type="checkbox" checked /> Flood risk map</label>
       <label><input id="wildfireToggle" type="checkbox" checked /> Historical wildfire perimeters</label>
-      <label><input id="buildingsToggle" type="checkbox" checked /> 3D buildings</label>
       <label><input id="satelliteToggle" type="checkbox" checked /> Satellite imagery</label>
     </div>
     <div id="status" role="status">Loading sites…</div>
@@ -67,7 +60,7 @@
   <div id="legend">
     <div><span class="swatch floodRisk"></span> Flood risk map</div>
     <div><span class="swatch wildfire"></span> Historical wildfire perimeter</div>
-    <small id="legendNote">Flood risk map includes both 1% and 0.2% annual-chance flood zones. ANALYTICAL mode also shows historical wildfire perimeters. REALISTIC mode shows 3D only.</small>
+    <small id="legendNote">Flood risk is a single control combining 1% annual-chance, 0.2% annual-chance, and lower-hazard/susceptibility polygons where available. Wildfire perimeters are loaded independently.</small>
   </div>
 
   <footer id="footer">
