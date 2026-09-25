@@ -20,7 +20,7 @@
     "Indiana - 1",
     "Louisiana",
     "Stargate Abilene",
-    "Arizona",
+    "Arizona"
   ];
   const PLAY_DWELL_MS = 4500;
   const PLAY_ZOOM_OUT_KM = 180;
@@ -431,23 +431,33 @@
   }
 
   function flyToLocation3D(location, duration = 1.4) {
-    if (!location) return Promise.resolve();
-    const lat = Number(location.lat);
-    const lon = Number(location.lon);
-    const bias = visibleMapBias();
-    const targetLon = lon - (0.035 * bias / 0.12);
-    const target = Cesium.Cartesian3.fromDegrees(targetLon, lat, 0);
-    return new Promise(resolve => viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(target, 25), {
-      duration,
-      offset: new Cesium.HeadingPitchRange(
-        Cesium.Math.toRadians(350),
-        Cesium.Math.toRadians(-48),
-        2600
-      ),
-      complete: resolve,
-      cancel: resolve
-    }));
+  if (!location) return Promise.resolve();
+
+  const lat = Number(location.lat);
+  const lon = Number(location.lon);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return Promise.resolve();
   }
+
+  const target = Cesium.Cartesian3.fromDegrees(lon, lat, 0);
+
+  return new Promise(resolve => {
+    viewer.camera.flyToBoundingSphere(
+      new Cesium.BoundingSphere(target, 30),
+      {
+        duration,
+        offset: new Cesium.HeadingPitchRange(
+          Cesium.Math.toRadians(335),
+          Cesium.Math.toRadians(-38),
+          1200
+        ),
+        complete: resolve,
+        cancel: resolve
+      }
+    );
+  });
+}
 
   async function set3DMode(enabled, options = {}) {
     const want3D = Boolean(enabled);
