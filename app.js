@@ -10,6 +10,24 @@
   const cfg = window.APP_CONFIG || {};
   const SERVICE_BROKER_URL = String(cfg.SERVICE_BROKER_URL || "").replace(/\/$/, "");
   const DEFAULT_SITE_LABEL = String(cfg.DEFAULT_SITE_LABEL || "Texas - 7");
+  const GOOGLE_2D_ION_ASSET_ID = 3830184;
+  const CESIUM_ION_TOKEN_FALLBACK = String(cfg.CESIUM_ION_TOKEN || "").trim();
+
+  // Same WeatherTradeNet risk-score structure and colors used by the Cotton Risk Management app.
+  // The browser never receives the WeatherTradeNet API key; it calls the Cloudflare Worker instead.
+  const HAZARDS = [
+    ["FD", "Inland Flood"], ["SL", "Sea Level Rise / Coastal Inundation"],
+    ["HW", "Heat Wave"], ["CS", "Cold Stress"], ["DR", "Drought"],
+    ["ER", "Extreme Rainfall"], ["SS", "Severe Storm"], ["WF", "WildFire"],
+    ["LS", "Landslide"], ["TC", "Temperature Change"],
+    ["PC", "Change in Precipitation patterns"], ["AL", "Overall multi-hazard"]
+  ];
+  const HAZARD_GROUPS = [
+    { label: "Past", tooltip: "Historical reference value for all scenarios", columns: [{ label: "", period: "hist", scenario: "hist" }] },
+    { label: "SSP1 · RCP2.6", columns: ["2030", "2040", "2050"].map(period => ({ label: period, period, scenario: "ssp1rcp26" })) },
+    { label: "SSP2 · RCP4.5", columns: ["2030", "2040", "2050"].map(period => ({ label: period, period, scenario: "ssp2rcp45" })) },
+    { label: "SSP5 · RCP8.5", columns: ["2030", "2040", "2050"].map(period => ({ label: period, period, scenario: "ssp5rcp85" })) }
+  ];
 
   const ABILENE_FLOOD_BOUNDS = { west: -99.96, south: 32.26, east: -99.53, north: 32.71 };
   const EL_PASO_FLOOD_BOUNDS = { west: -106.70, south: 31.35, east: -105.90, north: 32.08 };
@@ -76,17 +94,36 @@
     floodRisk: document.getElementById("floodRiskToggle"),
     wildfire: document.getElementById("wildfireToggle"),
     satellite: document.getElementById("satelliteToggle"),
+    threeD: document.getElementById("threeDToggle"),
     hover: document.getElementById("hoverCard"),
     searchForm: document.getElementById("locationSearchForm"),
     searchInput: document.getElementById("locationSearchInput"),
     searchButton: document.getElementById("locationSearchButton"),
     searchMessage: document.getElementById("searchMessage"),
     modal: document.getElementById("tailoredModal"),
-    modalClose: document.getElementById("tailoredModalClose")
+    modalClose: document.getElementById("tailoredModalClose"),
+    riskWidget: document.getElementById("riskWidget"),
+    riskWidgetIcon: document.getElementById("riskWidgetIcon"),
+    riskWidgetPanel: document.getElementById("riskWidgetPanel"),
+    riskWidgetMinimize: document.getElementById("riskWidgetMinimize"),
+    riskHeatmapContent: document.getElementById("riskHeatmapContent"),
+    measureToggle: document.getElementById("measureToggle"),
+    measurePanel: document.getElementById("measurePanel"),
+    measureReadout: document.getElementById("measureReadout"),
+    measureFinish: document.getElementById("measureFinish"),
+    measureClear: document.getElementById("measureClear"),
+    mapScale: document.getElementById("mapScale"),
+    scaleMetric: document.getElementById("scaleMetric"),
+    scaleImperial: document.getElementById("scaleImperial"),
+    scaleBar: document.getElementById("scaleBar")
   };
 
   let viewer;
   let satelliteLayer;
+  let google3DTileset = null;
+  let cesiumIonToken = "";
+  let googleGeocoder = null;
+  let threeDMode = false;
   let sites = [];
   let selectedSite = null;
   let searchMarker = null;
@@ -95,6 +132,15 @@
   let floodImageryLayers = [];
   let wildfireSource = null;
   let hazardGeneration = 0;
+  const riskScoreCache = new Map();
+  let riskRequestGeneration = 0;
+  let measureActive = false;
+  let measureFinished = false;
+  let measurePoints = [];
+  let measureHoverPoint = null;
+  let measureLineEntity = null;
+  let measureHoverLabel = null;
+  let scaleLastUpdate = 0;
 
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, c => ({
@@ -110,7 +156,113 @@
   }
   function setSearchMessage(text) { if (els.searchMessage) els.searchMessage.textContent = text || ""; }
 
-  function createViewer() {
+  function hazardValues(payload, period, scenario) {
+    const list = payload?.hazards?.[period]?.[scenario]?.hazard || [];
+    return Object.assign({}, ...list);
+  }
+
+  // Exact scoring/color logic from the Cotton Risk Management climate-risk heatmap.
+  function riskRating(value) {
+    return Number.isFinite(value) ? Math.max(1, Math.min(5, Math.ceil(value * 5))) : null;
+  }
+
+  function riskColor(rating) {
+    const alpha = rating == null ? 0 : .12 + rating * .17;
+    return `rgba(159,116,151,${alpha})`;
+  }
+
+  function renderRiskHeatmap(payload) {
+    if (!els.riskHeatmapContent) return;
+    const groupData = HAZARD_GROUPS.map(group => ({
+      ...group,
+      values: group.columns.map(column => hazardValues(payload, column.period, column.scenario))
+    }));
+    const groupHead = groupData.map((group, index) =>
+      `${index ? '<th class="risk-gap" rowspan="2" aria-hidden="true"></th>' : ""}<th class="risk-group-title ${index === 0 ? "historical-group" : "scenario-group"}" colspan="${group.columns.length}">${index === 0 ? `<span class="past-label" title="${group.tooltip}" aria-label="Past — ${group.tooltip}">${group.label}<sup>?</sup></span>` : group.label}</th>`
+    ).join("");
+    const periodHead = groupData.map((group, index) =>
+      group.columns.map(column => `<th class="${index === 0 ? "historical-period" : "scenario-period"}">${column.label}</th>`).join("")
+    ).join("");
+    const rows = HAZARDS.map(([code, label]) =>
+      `<tr><th scope="row">${escapeHtml(label)}</th>${groupData.map((group, groupIndex) =>
+        group.values.map(values => {
+          const rating = riskRating(values[code]);
+          return `<td class="risk-cell ${groupIndex === 0 ? "historical-cell" : ""}" style="background:${riskColor(rating)};color:${rating >= 4 ? "#fff" : "#424656"}">${rating ?? "—"}</td>`;
+        }).join("")
+      ).join('<td class="risk-gap" aria-hidden="true"></td>')}</tr>`
+    ).join("");
+    els.riskHeatmapContent.className = "";
+    els.riskHeatmapContent.innerHTML = `<div class="risk-scroll"><table class="risk-heatmap"><thead><tr><th rowspan="2">Hazard</th>${groupHead}</tr><tr>${periodHead}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  function riskLocationKey(location) {
+    return `${Number(location?.lat).toFixed(5)},${Number(location?.lon).toFixed(5)}`;
+  }
+
+  function setRiskWidgetCollapsed(collapsed) {
+    if (!els.riskWidget) return;
+    els.riskWidget.classList.toggle("collapsed", Boolean(collapsed));
+  }
+
+  async function loadRiskScores(location) {
+    const generation = ++riskRequestGeneration;
+    if (!els.riskWidget || !els.riskHeatmapContent || !location) return;
+    els.riskWidget.hidden = false;
+    const key = riskLocationKey(location);
+    if (riskScoreCache.has(key)) {
+      if (generation === riskRequestGeneration) renderRiskHeatmap(riskScoreCache.get(key));
+      return;
+    }
+    els.riskHeatmapContent.className = "risk-heatmap-status";
+    els.riskHeatmapContent.textContent = "Loading risk scores…";
+    if (!SERVICE_BROKER_URL || SERVICE_BROKER_URL.includes("YOUR-WORKER")) {
+      els.riskHeatmapContent.textContent = "Risk-score API proxy is not configured.";
+      return;
+    }
+    try {
+      const q = new URLSearchParams({ lat: String(Number(location.lat)), lon: String(Number(location.lon)) });
+      const response = await fetch(`${SERVICE_BROKER_URL}/api/hazards?${q.toString()}`, {
+        headers: { accept: "application/json" }
+      });
+      if (!response.ok) throw new Error(`Risk API proxy returned ${response.status}`);
+      const payload = await response.json();
+      if (!payload?.hazards) throw new Error("Risk API returned no hazards payload");
+      riskScoreCache.set(key, payload);
+      if (generation === riskRequestGeneration) renderRiskHeatmap(payload);
+    } catch (error) {
+      console.warn("Risk score load failed", error);
+      if (generation === riskRequestGeneration) {
+        els.riskHeatmapContent.className = "risk-heatmap-status";
+        els.riskHeatmapContent.textContent = "Physical climate risk scores are temporarily unavailable.";
+      }
+    }
+  }
+
+  async function fetchCesiumIonToken() {
+    if (CESIUM_ION_TOKEN_FALLBACK) return CESIUM_ION_TOKEN_FALLBACK;
+    if (!SERVICE_BROKER_URL || SERVICE_BROKER_URL.includes("YOUR-WORKER")) {
+      throw new Error("Cesium ion token is not configured");
+    }
+    const response = await fetch(`${SERVICE_BROKER_URL}/api/cesium-token`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`Cesium token HTTP ${response.status}`);
+    const payload = await response.json();
+    const token = String(payload?.token || "").trim();
+    if (!token) throw new Error("Cesium ion token is empty");
+    return token;
+  }
+
+  function addEsriFallbackBasemap() {
+    const provider = new Cesium.UrlTemplateImageryProvider({
+      url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      credit: "Esri World Imagery"
+    });
+    satelliteLayer = viewer.imageryLayers.addImageryProvider(provider);
+    satelliteLayer.brightness = 0.92;
+    satelliteLayer.contrast = 1.04;
+    satelliteLayer.saturation = 0.92;
+  }
+
+  async function createViewer() {
     viewer = new Cesium.Viewer("cesiumContainer", {
       sceneMode: Cesium.SceneMode.SCENE2D,
       mapMode2D: Cesium.MapMode2D.INFINITE_SCROLL,
@@ -127,16 +279,126 @@
     });
 
     viewer.imageryLayers.removeAll();
-    const satelliteProvider = new Cesium.UrlTemplateImageryProvider({
-      url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-      credit: "Esri World Imagery"
-    });
-    satelliteLayer = viewer.imageryLayers.addImageryProvider(satelliteProvider);
-    satelliteLayer.brightness = 0.92;
-    satelliteLayer.contrast = 1.04;
-    satelliteLayer.saturation = 0.92;
+
+    try {
+      cesiumIonToken = await fetchCesiumIonToken();
+      Cesium.Ion.defaultAccessToken = cesiumIonToken;
+      const googleProvider = await Cesium.Google2DImageryProvider.fromIonAssetId({
+        assetId: GOOGLE_2D_ION_ASSET_ID,
+        mapType: "satellite",
+        language: "en_US",
+        region: "US",
+        maximumLevel: 22
+      });
+      satelliteLayer = viewer.imageryLayers.addImageryProvider(googleProvider);
+      satelliteLayer.brightness = 1.0;
+      satelliteLayer.contrast = 1.0;
+      satelliteLayer.saturation = 1.0;
+
+      googleGeocoder = new Cesium.IonGeocoderService({
+        scene: viewer.scene,
+        accessToken: cesiumIonToken,
+        geocodeProviderType: Cesium.IonGeocodeProviderType.GOOGLE
+      });
+    } catch (error) {
+      console.warn("Google Satellite 2D unavailable; using Esri fallback.", error);
+      addEsriFallbackBasemap();
+      setWarning("Google Satellite 2D is unavailable until the Cesium ion token route is configured. Esri satellite is being used as a fallback.");
+    }
 
     viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#151821");
+    viewer.scene.globe.enableLighting = false;
+    viewer.scene.fog.enabled = false;
+  }
+
+  async function ensureGooglePhotorealistic3D() {
+    if (google3DTileset) return google3DTileset;
+    if (!cesiumIonToken) {
+      cesiumIonToken = await fetchCesiumIonToken();
+      Cesium.Ion.defaultAccessToken = cesiumIonToken;
+    }
+    const tileset = await Cesium.createGooglePhotorealistic3DTileset({
+      showCreditsOnScreen: true
+    });
+    tileset.maximumScreenSpaceError = 6;
+    tileset.dynamicScreenSpaceError = true;
+    tileset.preloadFlightDestinations = true;
+    tileset.show = false;
+    viewer.scene.primitives.add(tileset);
+    google3DTileset = tileset;
+    return tileset;
+  }
+
+  function activeLocation() {
+    return selectedSite || searchedLocation || null;
+  }
+
+  function visibleMapBias() {
+    const canvasWidth = Math.max(1, viewer?.canvas?.clientWidth || window.innerWidth || 1);
+    const panel = document.getElementById("panel");
+    const panelRect = panel?.getBoundingClientRect?.();
+    if (!panelRect || canvasWidth <= 760 || panelRect.width >= canvasWidth * 0.48) return 0;
+    const visibleLeft = Math.min(canvasWidth * 0.45, Math.max(0, panelRect.right + 14));
+    const visibleCenterX = visibleLeft + (canvasWidth - visibleLeft) / 2;
+    return Math.max(0, Math.min(0.22, (visibleCenterX - canvasWidth / 2) / canvasWidth));
+  }
+
+  function flyToLocation3D(location, duration = 1.4) {
+    if (!location) return;
+    const lat = Number(location.lat);
+    const lon = Number(location.lon);
+    const bias = visibleMapBias();
+    const targetLon = lon - (0.035 * bias / 0.12);
+    const target = Cesium.Cartesian3.fromDegrees(targetLon, lat, 0);
+    viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(target, 25), {
+      duration,
+      offset: new Cesium.HeadingPitchRange(
+        Cesium.Math.toRadians(350),
+        Cesium.Math.toRadians(-48),
+        4200
+      )
+    });
+  }
+
+  async function set3DMode(enabled) {
+    const want3D = Boolean(enabled);
+    if (want3D === threeDMode) return;
+    if (els.threeD) els.threeD.disabled = true;
+    try {
+      if (want3D) {
+        setStatus("Loading Google Photorealistic 3D…");
+        const tileset = await ensureGooglePhotorealistic3D();
+        threeDMode = true;
+        viewer.scene.morphTo3D(0.8);
+        await new Promise(resolve => setTimeout(resolve, 900));
+        viewer.scene.globe.show = false;
+        viewer.scene.fog.enabled = false;
+        tileset.show = true;
+        const location = activeLocation();
+        if (location) flyToLocation3D(location, 1.0);
+        setStatus("Photorealistic 3D active. Turn it off to return to the Google Satellite 2D risk map.");
+      } else {
+        threeDMode = false;
+        if (google3DTileset) google3DTileset.show = false;
+        viewer.scene.globe.show = true;
+        viewer.scene.morphTo2D(0.8);
+        await new Promise(resolve => setTimeout(resolve, 900));
+        const location = activeLocation();
+        if (location) zoomToLocation(location, 0.8);
+        else showOverview();
+        setStatus("Google Satellite 2D active.");
+      }
+    } catch (error) {
+      console.error("Photorealistic 3D error", error);
+      threeDMode = false;
+      if (els.threeD) els.threeD.checked = false;
+      if (google3DTileset) google3DTileset.show = false;
+      viewer.scene.globe.show = true;
+      if (viewer.scene.mode !== Cesium.SceneMode.SCENE2D) viewer.scene.morphTo2D(0.5);
+      setWarning(`Photorealistic 3D unavailable: ${error.message || error}`);
+    } finally {
+      if (els.threeD) els.threeD.disabled = false;
+    }
   }
 
   function pointInsideBounds(location, bounds) {
@@ -759,9 +1021,278 @@
     els.hover.style.top = `${Math.max(pad, top)}px`;
   }
 
+  function cartographicHorizontalDistance(a, b) {
+    if (!a || !b) return 0;
+    try {
+      const geodesic = new Cesium.EllipsoidGeodesic(
+        new Cesium.Cartographic(a.longitude, a.latitude, 0),
+        new Cesium.Cartographic(b.longitude, b.latitude, 0)
+      );
+      return Number(geodesic.surfaceDistance) || 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  function measurementTotal(points = measurePoints, hover = null) {
+    if (!points.length) return { total: 0, last: 0 };
+    let total = 0;
+    let last = 0;
+    for (let i = 1; i < points.length; i += 1) {
+      last = cartographicHorizontalDistance(points[i - 1].cartographic, points[i].cartographic);
+      total += last;
+    }
+    if (hover && points.length) {
+      last = cartographicHorizontalDistance(points[points.length - 1].cartographic, hover.cartographic);
+      total += last;
+    }
+    return { total, last };
+  }
+
+  function formatMetricDistance(meters) {
+    if (!Number.isFinite(meters)) return "—";
+    if (meters < 1000) return `${meters < 100 ? meters.toFixed(1) : Math.round(meters)} m`;
+    const km = meters / 1000;
+    return `${km < 10 ? km.toFixed(2) : km < 100 ? km.toFixed(1) : Math.round(km)} km`;
+  }
+
+  function formatMiles(meters) {
+    if (!Number.isFinite(meters)) return "—";
+    const miles = meters / 1609.344;
+    if (miles < 0.1) return `${miles.toFixed(3)} mi`;
+    if (miles < 10) return `${miles.toFixed(2)} mi`;
+    if (miles < 100) return `${miles.toFixed(1)} mi`;
+    return `${Math.round(miles)} mi`;
+  }
+
+  function updateMeasureReadout(hover = measureActive ? measureHoverPoint : null) {
+    if (!els.measurePanel || !els.measureReadout) return;
+    const hasPoints = measurePoints.length > 0;
+    els.measurePanel.hidden = !(measureActive || hasPoints);
+    if (els.measureClear) els.measureClear.disabled = !hasPoints;
+    if (els.measureFinish) els.measureFinish.disabled = measurePoints.length < 2 || !measureActive;
+
+    if (!hasPoints) {
+      els.measureReadout.textContent = measureActive
+        ? "Click on the map to set the first point."
+        : "Click Measure distance to start.";
+      return;
+    }
+
+    const distance = measurementTotal(measurePoints, hover);
+    const prefix = hover && measureActive ? "Preview" : (measureFinished ? "Measured" : "Current");
+    const segment = measurePoints.length > 1 || hover
+      ? ` · last segment ${formatMetricDistance(distance.last)} / ${formatMiles(distance.last)}`
+      : "";
+    els.measureReadout.textContent = `${prefix}: ${formatMetricDistance(distance.total)} / ${formatMiles(distance.total)}${segment}`;
+  }
+
+  function pickHorizontalPosition(screenPosition) {
+    if (!viewer || !screenPosition) return null;
+    let cartesian = null;
+
+    if (viewer.scene.mode === Cesium.SceneMode.SCENE3D && viewer.scene.pickPositionSupported) {
+      try {
+        const picked = viewer.scene.pick(screenPosition);
+        if (picked) cartesian = viewer.scene.pickPosition(screenPosition);
+      } catch (_) {}
+    }
+
+    if (!cartesian && viewer.scene.globe?.show) {
+      try {
+        const ray = viewer.camera.getPickRay(screenPosition);
+        if (ray) cartesian = viewer.scene.globe.pick(ray, viewer.scene);
+      } catch (_) {}
+    }
+
+    if (!cartesian) {
+      try { cartesian = viewer.camera.pickEllipsoid(screenPosition, Cesium.Ellipsoid.WGS84); } catch (_) {}
+    }
+    if (!cartesian) return null;
+
+    const cartographic = Cesium.Cartographic.fromCartesian(cartesian, Cesium.Ellipsoid.WGS84);
+    if (!cartographic) return null;
+    return { cartesian, cartographic };
+  }
+
+  function ensureMeasureEntities() {
+    if (!measureLineEntity) {
+      measureLineEntity = viewer.entities.add({
+        id: "distance-measure-line",
+        polyline: {
+          positions: new Cesium.CallbackProperty(() => {
+            const positions = measurePoints.map(p => p.cartesian);
+            if (measureActive && measureHoverPoint && positions.length) positions.push(measureHoverPoint.cartesian);
+            return positions;
+          }, false),
+          width: 4,
+          material: Cesium.Color.fromCssColorString("#22d3ee"),
+          clampToGround: false,
+          depthFailMaterial: Cesium.Color.fromCssColorString("#22d3ee")
+        }
+      });
+    }
+    if (!measureHoverLabel) {
+      measureHoverLabel = viewer.entities.add({
+        id: "distance-measure-label",
+        position: new Cesium.CallbackProperty(() => {
+          if (measureActive && measureHoverPoint) return measureHoverPoint.cartesian;
+          return measurePoints.length ? measurePoints[measurePoints.length - 1].cartesian : undefined;
+        }, false),
+        label: {
+          text: new Cesium.CallbackProperty(() => {
+            if (!measurePoints.length) return "";
+            const d = measurementTotal(measurePoints, measureActive ? measureHoverPoint : null).total;
+            return `${formatMetricDistance(d)}\n${formatMiles(d)}`;
+          }, false),
+          font: "700 13px Inter, Arial, sans-serif",
+          fillColor: Cesium.Color.WHITE,
+          showBackground: true,
+          backgroundColor: Cesium.Color.fromCssColorString("rgba(36,40,51,0.88)"),
+          backgroundPadding: new Cesium.Cartesian2(7, 5),
+          pixelOffset: new Cesium.Cartesian2(12, -16),
+          horizontalOrigin: Cesium.HorizontalOrigin.LEFT,
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY
+        }
+      });
+    }
+  }
+
+  function addMeasurementPoint(screenPosition) {
+    if (!measureActive) return;
+    const picked = pickHorizontalPosition(screenPosition);
+    if (!picked) return;
+    ensureMeasureEntities();
+    measurePoints.push(picked);
+    measureHoverPoint = null;
+    viewer.entities.add({
+      position: picked.cartesian,
+      point: {
+        pixelSize: 9,
+        color: Cesium.Color.fromCssColorString("#22d3ee"),
+        outlineColor: Cesium.Color.WHITE,
+        outlineWidth: 2,
+        disableDepthTestDistance: Number.POSITIVE_INFINITY
+      },
+      properties: { isDistanceMeasurePoint: true }
+    });
+    updateMeasureReadout();
+  }
+
+  function clearMeasurement() {
+    for (const entity of [...viewer.entities.values]) {
+      if (entity?.properties?.isDistanceMeasurePoint || entity?.id === "distance-measure-line" || entity?.id === "distance-measure-label") {
+        viewer.entities.remove(entity);
+      }
+    }
+    measurePoints = [];
+    measureHoverPoint = null;
+    measureLineEntity = null;
+    measureHoverLabel = null;
+    measureFinished = false;
+    updateMeasureReadout(null);
+    if (!measureActive && els.measurePanel) els.measurePanel.hidden = true;
+  }
+
+  function setMeasurementActive(enabled, clearExisting = false) {
+    measureActive = Boolean(enabled);
+    if (measureActive && clearExisting) clearMeasurement();
+    if (measureActive) {
+      measureFinished = false;
+      ensureMeasureEntities();
+    } else {
+      measureHoverPoint = null;
+    }
+    document.body.classList.toggle("measuring", measureActive);
+    if (els.measureToggle) {
+      els.measureToggle.setAttribute("aria-pressed", String(measureActive));
+      els.measureToggle.textContent = measureActive ? "↔ Measuring…" : "↔ Measure distance";
+    }
+    updateMeasureReadout(null);
+  }
+
+  function finishMeasurement() {
+    if (measurePoints.length < 2) return;
+    measureFinished = true;
+    setMeasurementActive(false, false);
+  }
+
+  function updateMeasurementHover(screenPosition) {
+    if (!measureActive || !measurePoints.length) {
+      measureHoverPoint = null;
+      return;
+    }
+    measureHoverPoint = pickHorizontalPosition(screenPosition);
+    updateMeasureReadout(measureHoverPoint);
+  }
+
+  function niceScaleDistance(maxMeters) {
+    if (!Number.isFinite(maxMeters) || maxMeters <= 0) return 0;
+    const exponent = Math.pow(10, Math.floor(Math.log10(maxMeters)));
+    const normalized = maxMeters / exponent;
+    const factor = normalized >= 5 ? 5 : normalized >= 2 ? 2 : 1;
+    return factor * exponent;
+  }
+
+  function updateScaleBar(force = false) {
+    if (!viewer || !els.scaleBar || !els.scaleMetric || !els.scaleImperial) return;
+    const now = performance.now();
+    if (!force && now - scaleLastUpdate < 180) return;
+    scaleLastUpdate = now;
+
+    const canvas = viewer.scene.canvas;
+    const width = canvas.clientWidth || canvas.width;
+    const height = canvas.clientHeight || canvas.height;
+    if (!width || !height) return;
+    const samplePx = Math.max(60, Math.min(120, width * 0.12));
+    const y = Math.max(10, Math.min(height - 10, height * 0.72));
+    const x = width * 0.62;
+    const p1 = new Cesium.Cartesian2(x - samplePx / 2, y);
+    const p2 = new Cesium.Cartesian2(x + samplePx / 2, y);
+    let c1 = null;
+    let c2 = null;
+    try {
+      const e = Cesium.Ellipsoid.WGS84;
+      const a = viewer.camera.pickEllipsoid(p1, e);
+      const b = viewer.camera.pickEllipsoid(p2, e);
+      if (a && b) {
+        c1 = Cesium.Cartographic.fromCartesian(a, e);
+        c2 = Cesium.Cartographic.fromCartesian(b, e);
+      }
+    } catch (_) {}
+    if (!c1 || !c2) {
+      els.mapScale.style.display = "none";
+      return;
+    }
+    const sampleMeters = cartographicHorizontalDistance(c1, c2);
+    if (!Number.isFinite(sampleMeters) || sampleMeters <= 0) {
+      els.mapScale.style.display = "none";
+      return;
+    }
+    const metersPerPixel = sampleMeters / samplePx;
+    const targetMeters = niceScaleDistance(metersPerPixel * 125);
+    const barPx = Math.max(55, Math.min(140, targetMeters / metersPerPixel));
+    els.mapScale.style.display = "block";
+    els.scaleBar.style.width = `${barPx.toFixed(1)}px`;
+    els.scaleMetric.textContent = formatMetricDistance(targetMeters);
+    els.scaleImperial.textContent = formatMiles(targetMeters);
+  }
+
+  function installScaleBar() {
+    updateScaleBar(true);
+    viewer.scene.postRender.addEventListener(() => updateScaleBar(false));
+    window.addEventListener("resize", () => updateScaleBar(true));
+  }
+
   function installPicking() {
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
     handler.setInputAction(movement => {
+      if (measureActive) {
+        els.hover.hidden = true;
+        updateMeasurementHover(movement.endPosition);
+        return;
+      }
       const picked = viewer.scene.pick(movement.endPosition);
       const dc = picked?.id?.dcMeta;
       const fire = picked?.id?.fireMeta;
@@ -772,6 +1303,10 @@
     }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
 
     handler.setInputAction(click => {
+      if (measureActive) {
+        addMeasurementPoint(click.position);
+        return;
+      }
       const picked = viewer.scene.pick(click.position);
       const dc = picked?.id?.dcMeta;
       if (dc) selectSite(dc);
@@ -808,15 +1343,7 @@
     // The control panel overlays the left side of the map. Shift the camera centre west
     // so the selected data-center pin lands in the centre of the actually visible map area,
     // rather than underneath / beside the panel.
-    const canvasWidth = Math.max(1, viewer?.canvas?.clientWidth || window.innerWidth || 1);
-    const panel = document.getElementById("panel");
-    const panelRect = panel?.getBoundingClientRect?.();
-    let screenBias = 0;
-    if (panelRect && canvasWidth > 760 && panelRect.width < canvasWidth * 0.48) {
-      const visibleLeft = Math.min(canvasWidth * 0.45, Math.max(0, panelRect.right + 14));
-      const visibleCenterX = visibleLeft + (canvasWidth - visibleLeft) / 2;
-      screenBias = Math.max(0, Math.min(0.22, (visibleCenterX - canvasWidth / 2) / canvasWidth));
-    }
+    const screenBias = visibleMapBias();
     const cameraCenterLon = lon - (2 * dLon * screenBias);
     return Cesium.Rectangle.fromDegrees(
       cameraCenterLon - dLon,
@@ -827,6 +1354,10 @@
   }
 
   function zoomToLocation(location, duration = 1.4) {
+    if (threeDMode || viewer.scene.mode === Cesium.SceneMode.SCENE3D) {
+      flyToLocation3D(location, duration);
+      return;
+    }
     viewer.camera.flyTo({
       destination: mapRectangleAround(location, 22),
       duration
@@ -842,9 +1373,18 @@
     setSearchMessage("");
     zoomToLocation(site, duration);
     refreshHazards();
+    loadRiskScores(site);
   }
 
   function showOverview() {
+    if (threeDMode || viewer.scene.mode === Cesium.SceneMode.SCENE3D) {
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(-98.5, 38.5, 5000000),
+        orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 },
+        duration: 1.5
+      });
+      return;
+    }
     viewer.camera.flyTo({
       destination: Cesium.Rectangle.fromDegrees(-125.0, 24.0, -66.0, 50.0),
       duration: 1.5
@@ -863,8 +1403,29 @@
   async function geocode(text) {
     const coords = parseCoordinates(text);
     if (coords) return coords;
+
+    if (googleGeocoder) {
+      const results = await googleGeocoder.geocode(text, Cesium.GeocodeType.SEARCH);
+      const first = results?.[0];
+      if (first?.destination) {
+        let lat, lon;
+        if (first.destination instanceof Cesium.Rectangle) {
+          const center = Cesium.Rectangle.center(first.destination);
+          lat = Cesium.Math.toDegrees(center.latitude);
+          lon = Cesium.Math.toDegrees(center.longitude);
+        } else {
+          const cartographic = Cesium.Cartographic.fromCartesian(first.destination);
+          lat = Cesium.Math.toDegrees(cartographic.latitude);
+          lon = Cesium.Math.toDegrees(cartographic.longitude);
+        }
+        if (Number.isFinite(lat) && Number.isFinite(lon)) {
+          return { lat, lon, label: first.displayName || text };
+        }
+      }
+    }
+
     if (!SERVICE_BROKER_URL || SERVICE_BROKER_URL.includes("YOUR-WORKER")) {
-      throw new Error("For this simplified local build, enter coordinates as lat, lon.");
+      throw new Error("Address search is unavailable; enter coordinates as lat, lon.");
     }
     const r = await fetch(`${SERVICE_BROKER_URL}/api/geocode?q=${encodeURIComponent(text)}`);
     if (!r.ok) throw new Error("Address search is unavailable; use lat, lon.");
@@ -896,6 +1457,7 @@
       setSearchMessage(found.label || "Location found");
       zoomToLocation(found);
       refreshHazards();
+      loadRiskScores(found);
     } catch (error) {
       setSearchMessage(error.message || String(error));
     }
@@ -921,12 +1483,28 @@
       if (els.wildfire.checked && !wildfireSource) refreshHazards();
     });
     els.satellite?.addEventListener("change", () => { if (satelliteLayer) satelliteLayer.show = els.satellite.checked; });
+    els.threeD?.addEventListener("change", () => set3DMode(els.threeD.checked));
     els.searchForm?.addEventListener("submit", handleSearch);
     els.modalClose?.addEventListener("click", () => { if (els.modal) els.modal.hidden = true; });
+    els.riskWidgetMinimize?.addEventListener("click", () => setRiskWidgetCollapsed(true));
+    els.riskWidgetIcon?.addEventListener("click", () => setRiskWidgetCollapsed(false));
+    els.measureToggle?.addEventListener("click", () => {
+      if (measureActive) finishMeasurement();
+      else setMeasurementActive(true, measurePoints.length > 0);
+    });
+    els.measureFinish?.addEventListener("click", finishMeasurement);
+    els.measureClear?.addEventListener("click", () => {
+      clearMeasurement();
+      setMeasurementActive(false, false);
+    });
+    window.addEventListener("keydown", event => {
+      if (event.key === "Escape" && measureActive) finishMeasurement();
+    });
   }
 
   async function initialize() {
-    createViewer();
+    await createViewer();
+    installScaleBar();
     const response = await fetch("data/datacenters.json", { cache: "no-store" });
     if (!response.ok) throw new Error(`Data centers HTTP ${response.status}`);
     sites = await response.json();

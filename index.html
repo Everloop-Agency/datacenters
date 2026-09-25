@@ -16,10 +16,18 @@
     <img src="assets/everloop-logo.png" alt="Everloop" />
   </a>
 
+  <aside id="riskWidget" class="risk-widget" aria-label="Physical climate risk score heatmap">
+    <button id="riskWidgetIcon" class="risk-widget-icon" type="button" aria-label="Expand physical climate risk heatmap" title="Physical climate risk scores">▦</button>
+    <div id="riskWidgetPanel" class="risk-widget-panel">
+      <button id="riskWidgetMinimize" class="risk-widget-minimize" type="button" aria-label="Minimize physical climate risk heatmap" title="Minimize">−</button>
+      <div id="riskHeatmapContent" class="risk-heatmap-status">Loading risk scores…</div>
+    </div>
+  </aside>
+
   <section id="panel" aria-label="Data center climate risk controls">
     <div class="eyebrow">Physical climate risk</div>
     <h1>US Data Center Climate Risk Explorer</h1>
-    <p class="intro">Select a data center to view combined current + historical flood evidence and historical wildfire perimeters.</p>
+    <p class="intro">Select a data center to view flood and wildfire risk on Google Satellite 2D, with optional photorealistic 3D buildings.</p>
 
     <label class="field-label" for="siteSelect">Data center</label>
     <select id="siteSelect" aria-label="Select data center"></select>
@@ -43,11 +51,28 @@
     <div class="toggles analytical-toggles">
       <label><input id="floodRiskToggle" type="checkbox" checked /> Flood risk map</label>
       <label><input id="wildfireToggle" type="checkbox" checked /> Historical wildfire perimeters</label>
-      <label><input id="satelliteToggle" type="checkbox" checked /> Satellite imagery</label>
+      <label><input id="satelliteToggle" type="checkbox" checked /> Google Satellite 2D</label>
+      <label><input id="threeDToggle" type="checkbox" /> Photorealistic 3D buildings</label>
     </div>
     <div id="status" role="status">Loading sites…</div>
     <div id="configWarning" class="warning" hidden></div>
   </section>
+
+  <div id="mapTools" class="map-tools" aria-label="Map measurement tools">
+    <button id="measureToggle" class="measure-toggle" type="button" aria-pressed="false" title="Measure horizontal distance">↔ Measure distance</button>
+    <div id="measurePanel" class="measure-panel" hidden>
+      <div id="measureReadout" class="measure-readout" aria-live="polite">Click on the map to set the first point.</div>
+      <div class="measure-actions">
+        <button id="measureFinish" type="button" disabled>Finish</button>
+        <button id="measureClear" type="button" disabled>Clear</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="mapScale" class="map-scale" aria-label="Map scale">
+    <div class="scale-labels"><span id="scaleMetric">—</span><span id="scaleImperial">—</span></div>
+    <div id="scaleBar" class="scale-bar"><span></span></div>
+  </div>
 
   <div id="hoverCard" hidden></div>
 

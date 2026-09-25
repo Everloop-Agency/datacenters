@@ -13,3 +13,34 @@ Thumbs.db
 .vscode/
 .idea/
 cloudflare-worker/wrangler.toml
+
+# Wrangler local state
+.wrangler/
+**/.wrangler/
+
+# Maximum-safety: keep local Wrangler configuration out of GitHub
+wrangler.toml
+wrangler.jsonc
+**/wrangler.toml
+**/wrangler.jsonc
+
+# Generic credential/key files
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+credentials.json
+secrets.json
+service-account*.json
+*-credentials.json
+*-secrets.json
+
+# Local development
+node_modules/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+

@@ -65,3 +65,63 @@ Open:
 ```text
 http://localhost:8000
 ```
+
+
+## Physical climate risk-score heatmap
+
+Selecting a data center (or a searched coordinate) now also requests the WeatherTradeNet physical-climate hazard scores for that exact latitude/longitude and renders the same heatmap structure used by the Cotton Risk Management application:
+
+- Past
+- SSP1 / RCP2.6: 2030, 2040, 2050
+- SSP2 / RCP4.5: 2030, 2040, 2050
+- SSP5 / RCP8.5: 2030, 2040, 2050
+
+The panel is anchored in the upper-right of the map. On desktop its expanded size is **30vw × 30vh**. The `−` button reduces it to a small heatmap icon; clicking the icon expands it again. The expanded panel intentionally contains only the heatmap (plus the minimize control).
+
+The rating conversion and cell colors are copied from the Cotton Risk Management implementation. API responses are cached in the browser for the current session.
+
+### Cloudflare is used only for this WeatherTradeNet API call
+
+Flood and wildfire remain direct-to-provider and are unchanged.
+
+The frontend calls:
+
+```text
+https://data-centers.everloop.workers.dev/api/hazards?lat=...&lon=...
+```
+
+The WeatherTradeNet API key is **not** stored in this repository or sent to the browser.
+
+To enable the route on the existing `data-centers` Worker, follow `cloudflare/RISK_API_SETUP.md` and merge `cloudflare/hazards-proxy-snippet.js` into the existing Worker.
+
+## Google Satellite 2D and optional photorealistic 3D
+
+This build changes the preferred/default basemap to **Google Satellite 2D** using CesiumJS `Google2DImageryProvider` and Cesium ion asset `3830184`.
+
+A new **Photorealistic 3D buildings** checkbox is off by default. When enabled, the viewer morphs from the flat 2D map to Cesium 3D and streams **Google Photorealistic 3D Tiles** at a high visual-detail setting (`maximumScreenSpaceError = 6`). Turning the checkbox off returns to the original 2D risk-map view and its corrected map centering.
+
+The 2D Google imagery and 3D tiles use the latest imagery/content currently published by Google for each location; imagery capture dates vary by area and cannot be forced by the application.
+
+### Cloudflare requirement
+
+Keep the WeatherTradeNet risk-score proxy unchanged. Add the small `/api/cesium-token` route supplied in:
+
+- `cloudflare/CESIUM_GOOGLE_SETUP.md`
+- `cloudflare/cesium-token-route.js`
+
+No flood or wildfire data is routed through Cloudflare.
+
+
+## Map scale and distance measurement
+
+The map now includes a live scale bar in the lower-right corner showing metric and miles. The scale updates as the camera zooms or changes between 2D and photorealistic 3D.
+
+Use **Measure distance** in the lower-left corner to measure horizontal ground distance:
+
+1. Click **Measure distance**.
+2. Click the first point on the map.
+3. Click additional points to build a multi-segment path.
+4. The live readout shows the total and latest segment in km/m and miles.
+5. Click **Finish** (or press Escape) to keep the measurement visible, or **Clear** to remove it.
+
+Distance calculations use WGS84 geodesic surface distance between the clicked horizontal positions. In photorealistic 3D, clicks can be placed on visible 3D tiles, but the reported value remains horizontal ground distance rather than slope/vertical distance.
