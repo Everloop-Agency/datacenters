@@ -146,95 +146,6 @@
 
   function setStatus(text) { if (els.status) els.status.textContent = text || ""; }
 
-  function createMapLoadingBar() {
-      if (document.getElementById("mapLoadingBar")) return;
-
-      const style = document.createElement("style");
-      style.textContent = `
-        #mapLoadingBar {
-          position: fixed;
-          top: 18px;
-          left: 50%;
-          transform: translateX(-50%);
-          width: 320px;
-          padding: 10px 14px;
-          border-radius: 10px;
-          background: rgba(247,249,255,.96);
-          box-shadow: 0 8px 24px rgba(0,0,0,.22);
-          z-index: 9999;
-          font: 600 13px Arial, sans-serif;
-          color: #424656;
-          pointer-events: none;
-        }
-
-        #mapLoadingBar[hidden] {
-          display: none;
-        }
-
-        #mapLoadingBarText {
-          margin-bottom: 7px;
-          text-align: center;
-        }
-
-        .map-loading-track {
-          position: relative;
-          width: 100%;
-          height: 6px;
-          overflow: hidden;
-          border-radius: 4px;
-          background: rgba(159,116,151,.20);
-        }
-
-        .map-loading-runner {
-          position: absolute;
-          top: 0;
-          bottom: 0;
-          width: 35%;
-          border-radius: 4px;
-          background: #9f7497;
-          animation: mapLoadingMove 1.1s ease-in-out infinite;
-        }
-
-        @keyframes mapLoadingMove {
-          0% {
-            left: -35%;
-          }
-          100% {
-            left: 100%;
-          }
-        }
-      `;
-
-      document.head.appendChild(style);
-
-      const loader = document.createElement("div");
-      loader.id = "mapLoadingBar";
-      loader.hidden = true;
-
-      loader.innerHTML = `
-        <div id="mapLoadingBarText">
-          Loading flood and wildfire data…
-        </div>
-
-        <div class="map-loading-track">
-          <div class="map-loading-runner"></div>
-        </div>
-      `;
-
-      document.body.appendChild(loader);
-    }
-  function setMapLoading(show, text = "Loading flood and wildfire data…") {
-      const loader = document.getElementById("mapLoadingBar");
-      const label = document.getElementById("mapLoadingBarText");
-
-      if (!loader) return;
-
-      if (label) {
-        label.textContent = text;
-      }
-
-      loader.hidden = !show;
-    }
   function setWarning(text) {
     if (!els.warning) return;
     els.warning.hidden = !text;
@@ -1033,6 +944,14 @@
 
       setStatus(parts.join(" | "));
 
+      // Keep the spinner visible until Cesium has had a chance to render
+      // the newly-added flood / wildfire entities on screen.
+      await new Promise(resolve =>
+        requestAnimationFrame(() =>
+          requestAnimationFrame(resolve)
+        )
+      );
+
     } finally {
 
       if (generation === hazardGeneration) {
@@ -1731,7 +1650,6 @@
   }
 
   async function initialize() {
-    createMapLoadingBar();
     ensureMapLoadingUi();
     await createViewer();
     installScaleBar();
