@@ -6,34 +6,58 @@
   <title>US Data Center Climate Risk Explorer</title>
   <script src="https://cesium.com/downloads/cesiumjs/releases/1.145/Build/Cesium/Cesium.js"></script>
   <link href="https://cesium.com/downloads/cesiumjs/releases/1.145/Build/Cesium/Widgets/widgets.css" rel="stylesheet" />
-  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
   <link href="styles.css" rel="stylesheet" />
 </head>
 <body>
   <div id="cesiumContainer"></div>
 
+  <a id="everloopLogo" href="https://everloop.agency" target="_blank" rel="noopener noreferrer" aria-label="Everloop website">
+    <img src="assets/everloop-logo.png" alt="Everloop" />
+  </a>
+
   <section id="panel" aria-label="Data center climate risk controls">
     <div class="eyebrow">Physical climate risk</div>
     <h1>US Data Center Climate Risk Explorer</h1>
-    <p class="intro">Select a site to inspect mapped flood hazard and historical wildfire perimeters within 10 km, with 3D terrain and nearby buildings.</p>
+    <p class="intro">Use <b>ANALYTICAL</b> mode for national flood/wildfire assessment, or <b>REALISTIC</b> mode for Google Photorealistic 3D with live observed flooding around the selected location.</p>
 
     <label class="field-label" for="siteSelect">Data center</label>
     <select id="siteSelect" aria-label="Select data center"></select>
 
-    <div id="siteSummary" class="site-summary">Select a marker or use the menu.</div>
+    <form id="locationSearchForm" class="location-search" autocomplete="off">
+      <label class="field-label" for="locationSearchInput">Search location</label>
+      <div class="search-row">
+        <input id="locationSearchInput" type="text" inputmode="search" placeholder="Postal address or lat, lon" aria-label="Postal address or latitude, longitude" />
+        <button id="locationSearchButton" type="submit">Search</button>
+      </div>
+      <div id="searchMessage" class="search-message" aria-live="polite"></div>
+    </form>
+
+    <div id="siteSummary" class="site-summary">Loading Texas - 7…</div>
 
     <div class="actions">
       <button id="overviewBtn" type="button">US overview</button>
-      <button id="siteViewBtn" type="button" disabled>Selected 3D view</button>
+      <button id="siteViewBtn" type="button">Selected 3D view</button>
     </div>
 
-    <div class="toggles">
+    <div class="mode-switch" role="group" aria-label="Map view mode">
+      <button type="button" data-view-mode="realistic" aria-pressed="false">REALISTIC</button>
+      <button type="button" data-view-mode="analytical" class="active" aria-pressed="true">ANALYTICAL</button>
+    </div>
+    <div id="modeStatus" class="mode-status">ANALYTICAL · World Terrain + 3D Buildings</div>
+
+    <div class="toggles analytical-toggles">
       <label><input id="flood1Toggle" type="checkbox" checked /> 1% annual-chance flood area</label>
       <label><input id="flood02Toggle" type="checkbox" checked /> 0.2% annual-chance flood area</label>
       <label><input id="wildfireToggle" type="checkbox" checked /> Historical wildfire perimeters</label>
       <label><input id="buildingsToggle" type="checkbox" checked /> 3D buildings</label>
       <label><input id="satelliteToggle" type="checkbox" checked /> Satellite imagery</label>
-      <label><input id="radiusToggle" type="checkbox" checked /> 10 km boundary</label>
+    </div>
+
+    <div class="live-flood-controls">
+      <div class="group-label">Observed flooding · REALISTIC mode</div>
+      <label><input id="liveCopernicusToggle" type="checkbox" checked /> Copernicus observed flood extent</label>
+      <label><input id="liveNasa1dToggle" type="checkbox" checked /> NASA VIIRS flood · 1 day</label>
+      <label><input id="liveNasa3dToggle" type="checkbox" /> NASA VIIRS flood · 3 day</label>
     </div>
 
     <div id="status" role="status">Loading sites…</div>
@@ -42,12 +66,25 @@
 
   <div id="hoverCard" hidden></div>
 
+  <div id="tailoredModal" class="modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="tailoredModalTitle">
+    <div class="modal-card">
+      <button id="tailoredModalClose" class="modal-close" type="button" aria-label="Close">×</button>
+      <div id="tailoredModalTitle" class="modal-title">Data for this location is a tailored request</div>
+    </div>
+  </div>
+
   <div id="legend">
     <div><span class="swatch flood1"></span> 1% annual-chance flood area</div>
     <div><span class="swatch flood02"></span> 0.2% annual-chance flood area</div>
     <div><span class="swatch wildfire"></span> Historical wildfire perimeter</div>
-    <small>Flood and wildfire polygons are clipped to 10 km around the selected site. Flood polygons show mapped hazard extent, not modeled water depth. Historical wildfire coverage varies by place and reporting period.</small>
+    <small id="legendNote">ANALYTICAL mode streams national hazard polygons by map view. REALISTIC mode loads photorealistic 3D and live observed flood imagery only around the current focus for speed.</small>
   </div>
+
+  <footer id="footer">
+    <a href="mailto:hello@everloop.agency">hello@everloop.agency</a>
+    <span>·</span>
+    <a href="https://everloop.agency" target="_blank" rel="noopener noreferrer">everloop.agency</a>
+  </footer>
 
   <script src="public-config.js"></script>
   <script src="app.js"></script>
