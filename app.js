@@ -1,11 +1,11 @@
 (() => {
   "use strict";
 
-  // Simplified 2D/2.5D map stack based on the working Abilene project:
+  // Flat 2D map stack based on the working Abilene project:
   // - Esri World Imagery basemap
   // - direct ArcGIS GeoJSON flood polygons
   // - direct ArcGIS GeoJSON wildfire perimeters
-  // No Cesium terrain, OSM buildings, Google Photorealistic 3D, or Cloudflare map/3D calls.
+  // No 3D globe view, terrain, buildings, photorealistic tiles, or Cloudflare map/3D calls.
 
   const cfg = window.APP_CONFIG || {};
   const SERVICE_BROKER_URL = String(cfg.SERVICE_BROKER_URL || "").replace(/\/$/, "");
@@ -19,6 +19,11 @@
     "https://services6.arcgis.com/iBFmWI3dYPQqS1KF/arcgis/rest/services/City_of_Abilene_Flood_Zones/FeatureServer";
   const EL_PASO_FLOOD_SERVICE =
     "https://gis.elpasotexas.gov/dev/rest/services/Planning/FloodZone/FeatureServer/0/query";
+  // Nationwide flood coverage for sites outside the local Abilene / El Paso services.
+  // This Esri Living Atlas feature layer is derived from FEMA NFHL and supports GeoJSON queries.
+  const ESRI_US_FLOOD_SERVICE =
+    "https://services5.arcgis.com/7weheFjxuNkGGiZi/ArcGIS/rest/services/USA_Flood_Hazard_Areas_view/FeatureServer/0/query";
+  // Keep FEMA's direct polygon endpoint only as a secondary fallback.
   const FEMA_FLOOD_SERVICE =
     "https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer/28/query";
 
@@ -72,7 +77,8 @@
 
   function createViewer() {
     viewer = new Cesium.Viewer("cesiumContainer", {
-      terrainProvider: new Cesium.EllipsoidTerrainProvider(),
+      sceneMode: Cesium.SceneMode.SCENE2D,
+      mapMode2D: Cesium.MapMode2D.INFINITE_SCROLL,
       animation: false,
       timeline: false,
       geocoder: false,
@@ -95,9 +101,6 @@
     satelliteLayer.contrast = 1.04;
     satelliteLayer.saturation = 0.92;
 
-    viewer.scene.globe.depthTestAgainstTerrain = false;
-    viewer.scene.globe.enableLighting = false;
-    viewer.scene.fog.enabled = false;
     viewer.scene.backgroundColor = Cesium.Color.fromCssColorString("#151821");
   }
 
@@ -126,9 +129,29 @@
       returnGeometry: "true",
       outSR: "4326",
       f: "geojson",
-      resultRecordCount: String(options.resultRecordCount || 2000)
+      resultRecordCount: String(options.resultRecordCount || 2000),
+      resultOffset: String(options.resultOffset || 0)
     });
     return `${base}?${q.toString()}`;
+  }
+
+  async function fetchGeoJsonPaged(base, bbox, options, label) {
+    const pageSize = Math.min(2000, Math.max(100, Number(options?.resultRecordCount || 1800)));
+    const maxPages = Math.max(1, Number(options?.maxPages || 4));
+    const all = [];
+    for (let page = 0; page < maxPages; page += 1) {
+      const features = await fetchGeoJson(
+        arcGisGeoJsonUrl(base, bbox, {
+          ...(options || {}),
+          resultRecordCount: pageSize,
+          resultOffset: page * pageSize
+        }),
+        label
+      );
+      all.push(...features);
+      if (features.length < pageSize) break;
+    }
+    return uniqueFeatures(all);
   }
 
   async function fetchGeoJson(url, label) {
@@ -199,7 +222,6 @@
         entity.polygon.material = color;
         entity.polygon.outline = true;
         entity.polygon.outlineColor = color.withAlpha(0.95);
-        entity.polygon.classificationType = Cesium.ClassificationType.TERRAIN;
         entity.polygon.zIndex = kind === "one" ? 32 : kind === "point2" ? 31 : 30;
       }
     }
@@ -210,57 +232,86 @@
 
   async function loadFlood(location) {
     if (!els.floodRisk.checked) return { count: 0, source: "off", warnings: [] };
-    const bbox = bboxAround(location, 40);
     const warnings = [];
     let tagged = [];
-    let source = "";
+    const sources = [];
 
-    // Use the exact working Abilene services around Abilene.
-    if (pointInsideBounds(location, ABILENE_FLOOD_BOUNDS) || String(location.closestCity || "").toLowerCase() === "abilene") {
+    const inAbilene = pointInsideBounds(location, ABILENE_FLOOD_BOUNDS) ||
+      String(location.closestCity || "").toLowerCase() === "abilene";
+    const inElPaso = pointInsideBounds(location, EL_PASO_FLOOD_BOUNDS);
+
+    // KEEP the exact working Abilene services. Do not replace them with national data.
+    if (inAbilene) {
       const baseBbox = bboxAround(location, 24);
       try {
         const [one, point2] = await Promise.all([
           fetchGeoJson(arcGisGeoJsonUrl(`${ABILENE_FLOOD_SERVICE}/1/query`, baseBbox), "Abilene 1% flood"),
           fetchGeoJson(arcGisGeoJsonUrl(`${ABILENE_FLOOD_SERVICE}/0/query`, baseBbox), "Abilene 0.2% flood")
         ]);
-        tagged = [
+        tagged.push(
           ...one.map(feature => ({ feature, kind: "one" })),
           ...point2.map(feature => ({ feature, kind: "point2" }))
-        ];
-        source = "City of Abilene flood zones";
+        );
+        if (one.length || point2.length) sources.push("City of Abilene flood zones");
       } catch (error) {
         warnings.push(error.message);
       }
     }
 
-    // Texas-7 / El Paso uses the City of El Paso flood polygon service directly.
-    if (!tagged.length && pointInsideBounds(location, EL_PASO_FLOOD_BOUNDS)) {
+    // KEEP the working Texas-7 / El Paso service. Do not replace it with national data.
+    if (inElPaso && !inAbilene) {
+      const bbox = bboxAround(location, 40);
       try {
         const features = await fetchGeoJson(
           arcGisGeoJsonUrl(EL_PASO_FLOOD_SERVICE, bbox, { outFields: "OBJECTID,ZONE,FLOW_PATH_" }),
           "El Paso flood"
         );
-        tagged = features.map(feature => ({ feature, kind: floodClass(feature, "elpaso") }));
-        source = "City of El Paso flood zones";
+        tagged.push(...features.map(feature => ({ feature, kind: floodClass(feature, "elpaso") })));
+        if (features.length) sources.push("City of El Paso flood zones");
       } catch (error) {
         warnings.push(error.message);
       }
     }
 
-    // Other US sites: direct FEMA polygon query (not the failing FEMA image-export tiles).
-    if (!tagged.length) {
+    // ADD nationwide coverage for every other data-center location.
+    // This does not replace the local Abilene or El Paso sources above.
+    if (!inAbilene && !inElPaso) {
+      const bbox = bboxAround(location, 34);
       try {
-        const features = await fetchGeoJson(
-          arcGisGeoJsonUrl(FEMA_FLOOD_SERVICE, bbox, {
-            outFields: "OBJECTID,FLD_ZONE,ZONE_SUBTY,SFHA_TF",
-            resultRecordCount: 2000
-          }),
-          "FEMA NFHL flood"
+        const features = await fetchGeoJsonPaged(
+          ESRI_US_FLOOD_SERVICE,
+          bbox,
+          {
+            outFields: "OBJECTID,FLD_ZONE,ZONE_SUBTY,SFHA_TF,esri_symbology",
+            resultRecordCount: 1800,
+            maxPages: 4
+          },
+          "USA Flood Hazard Areas"
         );
-        tagged = features.map(feature => ({ feature, kind: floodClass(feature, "fema") }));
-        source = "FEMA NFHL flood polygons";
+        tagged.push(...features.map(feature => ({ feature, kind: floodClass(feature, "esri-national") })));
+        if (features.length) sources.push("Esri Living Atlas / FEMA NFHL flood hazards");
       } catch (error) {
-        warnings.push(error.message);
+        warnings.push(`National flood layer: ${error.message}`);
+      }
+
+      // Secondary fallback only. It is intentionally not used when the Esri national layer works.
+      if (!tagged.length) {
+        try {
+          const features = await fetchGeoJsonPaged(
+            FEMA_FLOOD_SERVICE,
+            bbox,
+            {
+              outFields: "OBJECTID,FLD_ZONE,ZONE_SUBTY,SFHA_TF",
+              resultRecordCount: 1500,
+              maxPages: 3
+            },
+            "FEMA NFHL flood fallback"
+          );
+          tagged.push(...features.map(feature => ({ feature, kind: floodClass(feature, "fema") })));
+          if (features.length) sources.push("FEMA NFHL flood polygons (fallback)");
+        } catch (error) {
+          warnings.push(`FEMA fallback: ${error.message}`);
+        }
       }
     }
 
@@ -279,7 +330,7 @@
       one: byKind.one.length,
       point2: byKind.point2.length,
       susceptibility: byKind.susceptibility.length,
-      source,
+      source: sources.join(" + "),
       warnings
     };
   }
@@ -463,30 +514,56 @@
   }
 
   function addDataCenterMarkers() {
+    // Restore the original blue data-center pins from the datacenters project.
+    const pinBuilder = new Cesium.PinBuilder();
+    const pinImage = pinBuilder.fromColor(Cesium.Color.fromCssColorString("#2563eb"), 38).toDataURL();
+
     for (const site of sites) {
       const entity = viewer.entities.add({
+        id: `dc-${site.id}`,
         name: site.officialName,
         position: Cesium.Cartesian3.fromDegrees(Number(site.lon), Number(site.lat), 0),
-        point: {
-          pixelSize: 10,
-          color: Cesium.Color.fromCssColorString("#ff315f"),
-          outlineColor: Cesium.Color.WHITE,
-          outlineWidth: 2,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY
+        billboard: {
+          image: pinImage,
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          scaleByDistance: new Cesium.NearFarScalar(5.0e4, 1.15, 6.0e6, 0.45)
         }
       });
       entity.dcMeta = site;
     }
   }
 
+  function mapRectangleAround(location, km = 22) {
+    const lat = Number(location.lat);
+    const lon = Number(location.lon);
+    const dLat = km / 111.32;
+    const dLon = km / (111.32 * Math.max(0.25, Math.cos(Cesium.Math.toRadians(lat))));
+
+    // The control panel overlays the left side of the map. Shift the camera centre west
+    // so the selected data-center pin lands in the centre of the actually visible map area,
+    // rather than underneath / beside the panel.
+    const canvasWidth = Math.max(1, viewer?.canvas?.clientWidth || window.innerWidth || 1);
+    const panel = document.getElementById("panel");
+    const panelRect = panel?.getBoundingClientRect?.();
+    let screenBias = 0;
+    if (panelRect && canvasWidth > 760 && panelRect.width < canvasWidth * 0.48) {
+      const visibleLeft = Math.min(canvasWidth * 0.45, Math.max(0, panelRect.right + 14));
+      const visibleCenterX = visibleLeft + (canvasWidth - visibleLeft) / 2;
+      screenBias = Math.max(0, Math.min(0.22, (visibleCenterX - canvasWidth / 2) / canvasWidth));
+    }
+    const cameraCenterLon = lon - (2 * dLon * screenBias);
+    return Cesium.Rectangle.fromDegrees(
+      cameraCenterLon - dLon,
+      lat - dLat,
+      cameraCenterLon + dLon,
+      lat + dLat
+    );
+  }
+
   function zoomToLocation(location, duration = 1.4) {
     viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(Number(location.lon), Number(location.lat), 8500),
-      orientation: {
-        heading: Cesium.Math.toRadians(0),
-        pitch: Cesium.Math.toRadians(-58),
-        roll: 0
-      },
+      destination: mapRectangleAround(location, 22),
       duration
     });
   }
@@ -504,8 +581,7 @@
 
   function showOverview() {
     viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(-98.5, 38.0, 4800000),
-      orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 },
+      destination: Cesium.Rectangle.fromDegrees(-125.0, 24.0, -66.0, 50.0),
       duration: 1.5
     });
   }
