@@ -16,9 +16,11 @@
   // PLAY TOUR CONFIGURATION — edit these three names to choose the datacenters shown by Play.
   // Use the exact `officialName` values from data/datacenters.json.
   const PLAY_DATACENTER_NAMES = [
-    "Meta El Paso Data Center",
+    "California - 1",
+    "Indiana - 1",
+    "Louisiana",
     "Stargate Abilene",
-    "Hanover Technology Park"
+    "Arizona",
   ];
   const PLAY_DWELL_MS = 4500;
   const PLAY_ZOOM_OUT_KM = 180;

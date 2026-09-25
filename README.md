@@ -124,7 +124,7 @@ Distance calculations use WGS84 geodesic surface distance between the clicked ho
 
 ## Three-data-center PLAY tour
 
-The left control panel includes **Play 3 data centers**. The tour zooms out, zooms into each configured data center, waits for the core flood and wildfire requests to finish, keeps the location visible for a few seconds, then moves to the next location. Press **Stop PLAY** at any time.
+The left control panel includes **PLAY several data centers**. The tour zooms out, zooms into each configured data center, waits for the core flood and wildfire requests to finish, keeps the location visible for a few seconds, then moves to the next location. Press **Stop PLAY** at any time.
 
 To choose the three locations yourself, open `app.js` and edit this block near the top:
 
