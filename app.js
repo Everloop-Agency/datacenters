@@ -23,7 +23,7 @@
     "Meta Hyperion Data Center Campus",
     "Stargate Abilene",
   ];
-  const PLAY_DWELL_MS = 9000;
+  const PLAY_DWELL_MS = 10000;
   const PLAY_ZOOM_OUT_KM = 180;
 
   // Automatically switch to high-detail Google Photorealistic 3D only at very close zoom.
@@ -145,6 +145,96 @@
   }
 
   function setStatus(text) { if (els.status) els.status.textContent = text || ""; }
+
+  function createMapLoadingBar() {
+      if (document.getElementById("mapLoadingBar")) return;
+
+      const style = document.createElement("style");
+      style.textContent = `
+        #mapLoadingBar {
+          position: fixed;
+          top: 18px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 320px;
+          padding: 10px 14px;
+          border-radius: 10px;
+          background: rgba(247,249,255,.96);
+          box-shadow: 0 8px 24px rgba(0,0,0,.22);
+          z-index: 9999;
+          font: 600 13px Arial, sans-serif;
+          color: #424656;
+          pointer-events: none;
+        }
+
+        #mapLoadingBar[hidden] {
+          display: none;
+        }
+
+        #mapLoadingBarText {
+          margin-bottom: 7px;
+          text-align: center;
+        }
+
+        .map-loading-track {
+          position: relative;
+          width: 100%;
+          height: 6px;
+          overflow: hidden;
+          border-radius: 4px;
+          background: rgba(159,116,151,.20);
+        }
+
+        .map-loading-runner {
+          position: absolute;
+          top: 0;
+          bottom: 0;
+          width: 35%;
+          border-radius: 4px;
+          background: #9f7497;
+          animation: mapLoadingMove 1.1s ease-in-out infinite;
+        }
+
+        @keyframes mapLoadingMove {
+          0% {
+            left: -35%;
+          }
+          100% {
+            left: 100%;
+          }
+        }
+      `;
+
+      document.head.appendChild(style);
+
+      const loader = document.createElement("div");
+      loader.id = "mapLoadingBar";
+      loader.hidden = true;
+
+      loader.innerHTML = `
+        <div id="mapLoadingBarText">
+          Loading flood and wildfire data…
+        </div>
+
+        <div class="map-loading-track">
+          <div class="map-loading-runner"></div>
+        </div>
+      `;
+
+      document.body.appendChild(loader);
+    }
+  function setMapLoading(show, text = "Loading flood and wildfire data…") {
+      const loader = document.getElementById("mapLoadingBar");
+      const label = document.getElementById("mapLoadingBarText");
+
+      if (!loader) return;
+
+      if (label) {
+        label.textContent = text;
+      }
+
+      loader.hidden = !show;
+    }
   function setWarning(text) {
     if (!els.warning) return;
     els.warning.hidden = !text;
@@ -894,10 +984,19 @@
 
     clearHazards();
     const locationName = location.stateLabel || location.label || "selected location";
-    setMapLoading(true, `Loading flood and wildfire data for ${locationName}…`);
+    setMapLoading(
+      true,
+      `Loading data for ${
+        location.stateLabel ||
+        location.officialName ||
+        location.label ||
+        "selected datacenter"
+      }…`
+    );
     setStatus(`Loading flood risk and wildfire data for ${locationName}…`);
 
     try {
+
       const [flood, fire] = await Promise.all([
         loadFlood(location, generation),
         loadWildfire(location)
@@ -905,28 +1004,41 @@
 
       if (generation !== hazardGeneration) return;
 
-      for (const ds of floodSources) ds.show = els.floodRisk.checked;
-      if (wildfireSource) wildfireSource.show = els.wildfire.checked;
+      for (const ds of floodSources) {
+        ds.show = els.floodRisk.checked;
+      }
+
+      if (wildfireSource) {
+        wildfireSource.show = els.wildfire.checked;
+      }
 
       const parts = [];
+
       if (els.floodRisk.checked) {
-        const n = Array.isArray(flood.sourceDetails) ? flood.sourceDetails.length : 0;
-        parts.push(`Flood: ${flood.count} mapped feature(s)${n ? ` · ${n} source(s)` : ""}`);
-      } else {
-        parts.push("Flood: off");
+        const n = Array.isArray(flood.sourceDetails)
+          ? flood.sourceDetails.length
+          : 0;
+
+        parts.push(
+          `Flood: ${flood.count} mapped feature(s)` +
+          (n ? ` · ${n} direct source(s)` : "")
+        );
       }
 
       if (els.wildfire.checked) {
-        parts.push(`Wildfire: ${fire.count} perimeter(s)` + (fire.source ? ` · ${fire.source}` : ""));
-      } else {
-        parts.push("Wildfire: off");
+        parts.push(
+          `Wildfire: ${fire.count} perimeter(s)`
+        );
       }
+
       setStatus(parts.join(" | "));
 
-      const warnings = [...(flood.warnings || []), ...(fire.warnings || [])];
-      if (warnings.length) console.warn("Optional hazard source(s) unavailable:", warnings);
     } finally {
-      if (generation === hazardGeneration) setMapLoading(false);
+
+      if (generation === hazardGeneration) {
+        setMapLoading(false);
+      }
+
     }
   }
 
@@ -1619,6 +1731,7 @@
   }
 
   async function initialize() {
+    createMapLoadingBar();
     ensureMapLoadingUi();
     await createViewer();
     installScaleBar();
