@@ -20,15 +20,6 @@
   const ABILENE_FLOOD_SERVICE =
     "https://services6.arcgis.com/iBFmWI3dYPQqS1KF/arcgis/rest/services/City_of_Abilene_Flood_Zones/FeatureServer";
 
-  // FEMA National Flood Hazard Layer (NFHL), effective mapped flood zones.
-  // Layer 28 is the official Flood Hazard Zones map layer. It includes the
-  // mapped 1% annual-chance, 0.2% annual-chance, and other mapped flood-hazard
-  // zone classes in one rendered map layer, so the browser does not need the
-  // Cloudflare flood proxy just to display flood risk.
-  const FEMA_NFHL_MAP_SERVICE =
-    "https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer";
-  const FEMA_NFHL_FLOOD_LAYER_ID = "28";
-
   const els = {
     select: document.getElementById("siteSelect"),
     summary: document.getElementById("siteSummary"),
@@ -53,7 +44,6 @@
 
   let viewer;
   let satelliteLayer = null;
-  let nationalFloodRiskLayer = null;
   let buildingsTileset = null;
   let analyticalTerrainProvider = null;
   let googlePhotorealisticTileset = null;
@@ -116,14 +106,17 @@
     const assets = assetResult.status === "fulfilled" ? assetResult.value : null;
     const diagnostics = diagnosticResult.status === "fulfilled" ? diagnosticResult.value : null;
     const errors = [];
+    const optional = [];
     if (!mapConfig && mapResult.status === "rejected") errors.push(`map: ${mapResult.reason.message}`);
     if (!assets && assetResult.status === "rejected") errors.push(`3D: ${assetResult.reason.message}`);
     if (diagnosticResult.status === "rejected") errors.push(`diagnostics: ${diagnosticResult.reason.message}`);
-    if (diagnostics && !diagnostics.wildfireConfigured) errors.push("wildfire layers are not fully configured in Cloudflare");
-    if (diagnostics && !diagnostics.geocoderConfigured) errors.push("postal-address search is not configured in Cloudflare");
-    if (diagnostics && diagnostics.photorealisticConfigured === false) errors.push("photorealistic 3D is not configured in Cloudflare");
+    if (diagnostics && !diagnostics.floodConfigured) errors.push("historical flood layer is not configured in Cloudflare");
+    if (diagnostics && !diagnostics.wildfireConfigured) optional.push("historical wildfire layers are not fully configured");
+    if (diagnostics && !diagnostics.geocoderConfigured) optional.push("postal-address search is not configured");
+    if (diagnostics && diagnostics.photorealisticConfigured === false) optional.push("photorealistic 3D is not configured");
     if (!mapConfig && !assets && errors.length) throw new Error(errors.join("; "));
     if (errors.length) setWarning(`Some map services are unavailable (${errors.join("; ")}).`);
+    else if (optional.length) setWarning(`Optional features: ${optional.join("; ")}. Flood risk can still load independently.`);
     return { mapConfig, assets, diagnostics };
   }
 
@@ -180,27 +173,6 @@
       satelliteLayer.saturation = 0.82;
     }
 
-    // Always add the official FEMA NFHL flood map directly in Cesium.
-    // This is deliberately independent of the Cloudflare broker: Texas-7
-    // therefore starts with flood risk visible even if /api/flood is absent.
-    try {
-      const floodProvider = await Cesium.ArcGisMapServerImageryProvider.fromUrl(
-        FEMA_NFHL_MAP_SERVICE,
-        {
-          layers: FEMA_NFHL_FLOOD_LAYER_ID,
-          usePreCachedTilesIfAvailable: false,
-          enablePickFeatures: false,
-          credit: new Cesium.Credit("FEMA National Flood Hazard Layer (NFHL)", false)
-        }
-      );
-      nationalFloodRiskLayer = viewer.imageryLayers.addImageryProvider(floodProvider);
-      nationalFloodRiskLayer.alpha = 0.64;
-      nationalFloodRiskLayer.show = els.floodRisk.checked;
-    } catch (error) {
-      console.error("FEMA NFHL flood map unavailable.", error);
-      setWarning(`Flood map could not be loaded from FEMA NFHL: ${error.message}`);
-    }
-
     viewer.scene.globe.depthTestAgainstTerrain = true;
     viewer.scene.globe.enableLighting = false;
     viewer.scene.fog.enabled = true;
@@ -232,14 +204,13 @@
     }
     if (els.legendNote) {
       els.legendNote.textContent = viewMode === "realistic"
-        ? "REALISTIC mode: Google Photorealistic 3D. Switch to ANALYTICAL to display mapped flood hazard and historical wildfire overlays."
-        : "ANALYTICAL mode streams mapped flood-hazard polygons and historical wildfire perimeters by map view; previously requested cells are cached for faster revisits.";
+        ? "REALISTIC mode: 3D view. Switch to ANALYTICAL to display the flood risk map and historical wildfire overlays."
+        : "ANALYTICAL mode shows the flood risk map (1% + 0.2% annual-chance zones) and historical wildfire perimeters; previously requested areas are cached for faster revisits.";
     }
   }
 
   function setAnalyticalHazardVisibility(show) {
     const floodVisible = show && els.floodRisk.checked;
-    if (nationalFloodRiskLayer) nationalFloodRiskLayer.show = floodVisible;
     if (flood1Source) flood1Source.show = floodVisible;
     if (flood02Source) flood02Source.show = floodVisible;
     if (wildfireSource) wildfireSource.show = show && els.wildfire.checked;
@@ -660,6 +631,7 @@
   async function makeFloodSource(features, color) {
     if (!features.length) return null;
     const ds = await Cesium.GeoJsonDataSource.load({ type: "FeatureCollection", features }, { clampToGround: true });
+    ds.name = "Flood risk map";
     for (const entity of ds.entities.values) {
       if (entity.polygon) {
         entity.polygon.material = color;
@@ -786,30 +758,60 @@
 
   async function loadFloodForCells(cells, bbox) {
     if (!els.floodRisk.checked) return { flood1: [], flood02: [], errors: [], source: "off" };
-    const errors = [];
 
-    // The national FEMA NFHL imagery layer is always the base flood-risk map.
-    // Around Abilene we additionally draw the local City of Abilene polygons
-    // from the standalone Abilene project for local detail, under the same
-    // single Flood risk switch.
+    const errors = [];
+    const flood1 = [];
+    const flood02 = [];
+
+    // National historical flood-risk polygons are streamed through the
+    // Cloudflare broker, cell-by-cell.  This is the same GeoJSON approach that
+    // made the original local flood viewer reliable; unlike the previous
+    // MapServer-imagery attempt it does not depend on a cross-origin imagery
+    // provider in the browser.
+    if (BROKER_CONFIGURED) {
+      const chunks = await mapLimit(cells, 4, async cell => {
+        const key = cellKey("flood", cell);
+        try {
+          return await cachedCell(key, () => fetchPaged("flood", null, cell));
+        } catch (error) {
+          errors.push(`national: ${error.message}`);
+          return [];
+        }
+      });
+
+      for (const f of dedupeFeatures(chunks.flat(), "flood-national")) {
+        if (!f?.geometry || !["Polygon", "MultiPolygon"].includes(f.geometry.type)) continue;
+        const props = f.properties || {};
+        if (isFiveHundredYear(props)) flood02.push(f);
+        else if (isOnePercentFlood(props)) flood1.push(f);
+      }
+    } else {
+      errors.push("national: service broker is not configured");
+    }
+
+    // Around Abilene, keep the exact municipal FeatureServer query used by the
+    // standalone Abilene project.  It is an independent fallback/detail layer,
+    // so Abilene flood polygons still appear even if the national service has a
+    // temporary problem.
     if (pointInsideBounds(activeFocusLocation(), ABILENE_FLOOD_BOUNDS)) {
       try {
-        const [flood1, flood02] = await Promise.all([
+        const [local1, local02] = await Promise.all([
           fetchAbileneFloodLayer(1, bbox),
           fetchAbileneFloodLayer(0, bbox)
         ]);
-        return {
-          flood1: dedupeFeatures(flood1, "abilene-100"),
-          flood02: dedupeFeatures(flood02, "abilene-500"),
-          errors,
-          source: "City of Abilene + FEMA NFHL"
-        };
+        flood1.push(...local1);
+        flood02.push(...local02);
       } catch (error) {
-        errors.push(error.message);
+        errors.push(`local: ${error.message}`);
       }
     }
 
-    return { flood1: [], flood02: [], errors, source: "FEMA NFHL" };
+    return {
+      flood1: dedupeFeatures(flood1, "flood-1pct"),
+      flood02: dedupeFeatures(flood02, "flood-02pct"),
+      errors,
+      source: "historical flood risk"
+    };
   }
 
   async function loadWildfireForCells(cells, bbox) {
@@ -854,15 +856,17 @@
       : searchedLocation
         ? searchedLocation.label
         : "current map view";
-    const floodError = floodResult.errors.length ? `; local flood warning: ${[...new Set(floodResult.errors)].slice(0, 2).join(" | ")}` : "";
-    const fireError = fireResult.errors.length ? `; wildfire warnings: ${[...new Set(fireResult.errors)].slice(0, 2).join(" | ")}` : "";
-    const localDetail = (floodResult.flood1.length || floodResult.flood02.length)
-      ? ` + Abilene local detail (${floodResult.flood1.length} 1% / ${floodResult.flood02.length} 0.2% polygons)`
+    const floodError = floodResult.errors.length
+      ? `; flood warnings: ${[...new Set(floodResult.errors)].slice(0, 2).join(" | ")}`
+      : "";
+    const fireError = fireResult.errors.length
+      ? `; wildfire warnings: ${[...new Set(fireResult.errors)].slice(0, 2).join(" | ")}`
       : "";
     const fireText = BROKER_CONFIGURED
       ? `${fireResult.features.length} historical wildfire perimeters`
       : "wildfire broker unavailable";
-    setStatus(`${locationText}: Flood risk ON · FEMA NFHL${localDetail}; ${fireText}${floodError}${fireError}`);
+    const floodTotal = floodResult.flood1.length + floodResult.flood02.length;
+    setStatus(`${locationText}: Flood risk map — ${floodTotal} polygons loaded; ${fireText}${floodError}${fireError}`);
   }
 
   async function refreshHazardsForView() {
@@ -874,7 +878,7 @@
     const span = Math.max(spanX, spanY);
 
     if (span > MAX_HAZARD_VIEW_SPAN_DEG) {
-      setStatus(`Flood risk map is ON (FEMA NFHL). Zoom in further to stream historical wildfire and Abilene local-detail polygons.`);
+      setStatus(`Zoom in further to load the flood risk map and historical wildfire perimeters for the current view.`);
       return;
     }
 
@@ -882,13 +886,13 @@
     const focusBbox = bboxAroundFocus(activeFocusLocation(), 35);
     if (focusBbox) cells = mergeCells(cells, splitIntoCells(focusBbox));
     if (!cells.length || cells.length > MAX_CELLS_PER_VIEW) {
-      setStatus("Flood risk map remains visible. Zoom in slightly to load historical wildfire and Abilene local-detail polygons efficiently.");
+      setStatus("Zoom in slightly to load the flood risk map and historical wildfire perimeters efficiently.");
       return;
     }
 
     const generation = ++hazardGeneration;
     lastHazardViewLabel = `${bbox.west.toFixed(3)},${bbox.south.toFixed(3)},${bbox.east.toFixed(3)},${bbox.north.toFixed(3)}`;
-    setStatus(`Flood risk map ON · loading local detail and historical wildfire for the current view…`);
+    setStatus(`Loading flood risk map and historical wildfire for the current view…`);
 
     const [floodResult, fireResult] = await Promise.all([
       loadFloodForCells(cells, bbox),
@@ -1124,7 +1128,6 @@
 
     els.floodRisk.addEventListener("change", () => {
       const visible = viewMode === "analytical" && els.floodRisk.checked;
-      if (nationalFloodRiskLayer) nationalFloodRiskLayer.show = visible;
       if (flood1Source) flood1Source.show = visible;
       if (flood02Source) flood02Source.show = visible;
       if (els.floodRisk.checked) scheduleHazardRefresh(20);
