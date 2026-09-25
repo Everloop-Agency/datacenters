@@ -27,9 +27,9 @@ function json(data, status, cors, extra={}) {
 
 async function assetEndpoint(assetId, env) {
   const base = String(env.ASSET_API_BASE || "").replace(/\/$/, "");
-  if (!base || !env.PLATFORM_ACCESS_TOKEN) throw new Error("3D asset service is not configured");
+  if (!base || !env.CESIUM_ION_TOKEN) throw new Error("3D asset service is not configured");
   const r = await fetch(`${base}/${assetId}/endpoint`, {
-    headers: { "Authorization": `Bearer ${env.PLATFORM_ACCESS_TOKEN}` }
+    headers: { "Authorization": `Bearer ${env.CESIUM_ION_TOKEN}` }
   });
   if (!r.ok) throw new Error(`3D asset endpoint failed: HTTP ${r.status}`);
   return r.json();
