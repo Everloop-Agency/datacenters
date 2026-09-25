@@ -1255,7 +1255,9 @@
   function addDataCenterMarkers() {
     // Restore the original blue data-center pins from the datacenters project.
     const pinBuilder = new Cesium.PinBuilder();
-    const pinImage = pinBuilder.fromColor(Cesium.Color.fromCssColorString("#2563eb"), 38).toDataURL();
+    const pinImage = pinBuilder
+      .fromColor(Cesium.Color.fromCssColorString("#9f7497"), 38)
+      .toDataURL();
 
     for (const site of sites) {
       const entity = viewer.entities.add({
