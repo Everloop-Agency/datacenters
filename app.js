@@ -1383,8 +1383,11 @@
       if (loadId !== mapLoadGeneration) return null;
       return hazardPromise;
     } finally {
-      // Only the newest location load is allowed to hide the spinner.
-      if (loadId === mapLoadGeneration) {
+      // Outside PLAY, hide the spinner when the selected location is fully ready.
+      // During PLAY, keep it spinning through the entire dwell period and
+      // transition to the next location. PLAY itself turns it off only when
+      // the tour finishes or the user presses Stop.
+      if (loadId === mapLoadGeneration && !playActive) {
         setMapLoading(false);
       }
     }
@@ -1458,6 +1461,7 @@
     playActive = false;
     playRunId += 1;
     try { viewer?.camera?.cancelFlight?.(); } catch (_) {}
+    setMapLoading(false);
     updatePlayButton();
   }
 
@@ -1496,6 +1500,7 @@
 
     if (runId === playRunId) {
       playActive = false;
+      setMapLoading(false);
       updatePlayButton();
       setStatus("PLAY finished. Flood and wildfire layers remain on the last data center.");
     }
