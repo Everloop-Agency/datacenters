@@ -1504,7 +1504,7 @@
   function updatePlayButton() {
     if (!els.play) return;
     els.play.setAttribute("aria-pressed", String(playActive));
-    els.play.textContent = playActive ? "■ Stop PLAY" : "▶ Play 3 data centers";
+    els.play.textContent = playActive ? "■ Stop PLAY" : "▶ Play several data centers";
   }
 
   function waitForPlay(ms, runId) {
