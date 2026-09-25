@@ -16,11 +16,11 @@
   // PLAY TOUR CONFIGURATION — edit these three names to choose the datacenters shown by Play.
   // Use the exact `officialName` values from data/datacenters.json.
   const PLAY_DATACENTER_NAMES = [
-    "California - 1",
-    "Indiana - 1",
-    "Louisiana",
+    "Coachella Data Center & Microgrid proposal",
+    "DartPoints CLU01 – Columbus",
+    "Meta Hyperion Data Center Campus",
     "Stargate Abilene",
-    "Arizona"
+    "Buckeye Tech Corridor",
   ];
   const PLAY_DWELL_MS = 4500;
   const PLAY_ZOOM_OUT_KM = 180;
@@ -471,16 +471,59 @@
     try {
       if (want3D) {
         setStatus(automatic ? "Close zoom detected — loading high-detail Google Photorealistic 3D…" : "Loading Google Photorealistic 3D…");
+        const location = activeLocation();
+
+        if (!location) {
+          throw new Error("Select a data center before activating Photorealistic 3D.");
+        }
+
         const tileset = await ensureGooglePhotorealistic3D();
+
         threeDMode = true;
         auto3DActive = automatic;
-        viewer.scene.morphTo3D(0.65);
-        await new Promise(resolve => setTimeout(resolve, 720));
+
+        /*
+         * IMPORTANT:
+         * Switch to 3D immediately.
+         * Do NOT use Cesium's animated 2D → globe morph,
+         * because it zooms out to the whole Earth.
+         */
+        viewer.scene.morphTo3D(0);
+
+        await new Promise(resolve =>
+          requestAnimationFrame(() =>
+            requestAnimationFrame(resolve)
+          )
+        );
+
         viewer.scene.globe.show = false;
         viewer.scene.fog.enabled = false;
+
         tileset.show = true;
-        const location = activeLocation();
-        if (location) await flyToLocation3D(location, 0.85);
+
+        viewer.scene.requestRender();
+
+        /*
+         * First position the camera above the selected data center.
+         * This prevents any intermediate globe/global view.
+         */
+        viewer.camera.setView({
+          destination: Cesium.Cartesian3.fromDegrees(
+            Number(location.lon),
+            Number(location.lat),
+            4500
+          ),
+          orientation: {
+            heading: Cesium.Math.toRadians(335),
+            pitch: Cesium.Math.toRadians(-55),
+            roll: 0
+          }
+        });
+
+        /*
+         * Then make the attractive final zoom-in.
+         */
+        await flyToLocation3D(location, 1.5);
         setStatus(automatic ? "High-detail Photorealistic 3D active at close zoom." : "Photorealistic 3D active. Turn it off to return to the Google Satellite 2D risk map.");
       } else {
         threeDMode = false;
