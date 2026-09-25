@@ -977,10 +977,22 @@
   }
 
   function siteSummaryHtml(site) {
-    return `<strong>${escapeHtml(site.stateLabel)}</strong><br>${escapeHtml(site.officialName)}<br>` +
-      `<span>${escapeHtml(site.ownerOperator)} · ${escapeHtml(site.closestCity)}</span><br>` +
-      `<small>${Number(site.lat).toFixed(3)}, ${Number(site.lon).toFixed(3)}</small>`;
-  }
+      return `
+        <strong style="
+          font-size: 2em;
+          line-height: 1.1;
+          color: #9f7497;
+          display: block;
+          margin-bottom: 5px;
+        ">
+          ${escapeHtml(site.stateLabel)}
+        </strong>
+
+        ${escapeHtml(site.officialName)}<br>
+        <span>${escapeHtml(site.ownerOperator)} · ${escapeHtml(site.closestCity)}</span><br>
+        <small>${Number(site.lat).toFixed(3)}, ${Number(site.lon).toFixed(3)}</small>
+      `;
+    }
 
   function dataCenterHoverHtml(site) {
     return `<div class="state">${escapeHtml(site.stateLabel)}</div>` +
