@@ -137,6 +137,7 @@
   let riskWidgetCollapsedPosition = null;
   let mapLoadingEl = null;
   let mapLoadingTextEl = null;
+  let mapLoadGeneration = 0;
 
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, c => ({
@@ -176,15 +177,54 @@
     mapLoadingEl = document.createElement("div");
     mapLoadingEl.id = "mapLoadingOverlay";
     mapLoadingEl.hidden = true;
-    mapLoadingEl.innerHTML = '<span class="map-loading-spinner" aria-hidden="true"></span><span class="map-loading-text">Loading flood and wildfire data…</span>';
+    mapLoadingEl.innerHTML = '<span class="map-loading-spinner" aria-hidden="true"></span><span class="map-loading-text">Loading all map and risk data…</span>';
     mapLoadingTextEl = mapLoadingEl.querySelector(".map-loading-text");
     document.body.appendChild(mapLoadingEl);
   }
 
-  function setMapLoading(show, text = "Loading flood and wildfire data…") {
+  function setMapLoading(show, text = "Loading all map and risk data…") {
     ensureMapLoadingUi();
     mapLoadingEl.hidden = !show;
     if (mapLoadingTextEl) mapLoadingTextEl.textContent = text;
+  }
+
+  // Keep the spinner visible until Cesium reports that the tiles for the
+  // current view are fully loaded and the scene remains stable for a moment.
+  // There is intentionally no short timeout here: PLAY must not move on while
+  // the current location is still visibly loading.
+  function waitForCesiumSceneReady(loadId, stableMs = 800) {
+    if (!viewer?.scene) return Promise.resolve();
+
+    return new Promise(resolve => {
+      let stableSince = null;
+
+      const check = () => {
+        if (loadId !== mapLoadGeneration) {
+          resolve();
+          return;
+        }
+
+        const now = performance.now();
+        const globe = viewer.scene.globe;
+        const tilesLoaded = !globe || globe.tilesLoaded === true;
+
+        if (tilesLoaded) {
+          if (stableSince === null) stableSince = now;
+          if (now - stableSince >= stableMs) {
+            viewer.scene.requestRender();
+            requestAnimationFrame(() => requestAnimationFrame(resolve));
+            return;
+          }
+        } else {
+          stableSince = null;
+        }
+
+        requestAnimationFrame(check);
+      };
+
+      viewer.scene.requestRender();
+      check();
+    });
   }
 
   function hazardValues(payload, period, scenario) {
@@ -891,74 +931,49 @@
   async function refreshHazards() {
     const generation = ++hazardGeneration;
     const location = selectedSite || searchedLocation;
-    if (!location) return;
+    if (!location) return null;
 
     clearHazards();
-    const locationName = location.stateLabel || location.label || "selected location";
-    setMapLoading(
-      true,
-      `Loading data for ${
-        location.stateLabel ||
-        location.officialName ||
-        location.label ||
-        "selected datacenter"
-      }…`
-    );
+    const locationName = location.stateLabel || location.officialName || location.label || "selected location";
     setStatus(`Loading flood risk and wildfire data for ${locationName}…`);
 
-    try {
+    const [flood, fire] = await Promise.all([
+      loadFlood(location, generation),
+      loadWildfire(location)
+    ]);
 
-      const [flood, fire] = await Promise.all([
-        loadFlood(location, generation),
-        loadWildfire(location)
-      ]);
+    if (generation !== hazardGeneration) return null;
 
-      if (generation !== hazardGeneration) return;
-
-      for (const ds of floodSources) {
-        ds.show = els.floodRisk.checked;
-      }
-
-      if (wildfireSource) {
-        wildfireSource.show = els.wildfire.checked;
-      }
-
-      const parts = [];
-
-      if (els.floodRisk.checked) {
-        const n = Array.isArray(flood.sourceDetails)
-          ? flood.sourceDetails.length
-          : 0;
-
-        parts.push(
-          `Flood: ${flood.count} mapped feature(s)` +
-          (n ? ` · ${n} direct source(s)` : "")
-        );
-      }
-
-      if (els.wildfire.checked) {
-        parts.push(
-          `Wildfire: ${fire.count} perimeter(s)`
-        );
-      }
-
-      setStatus(parts.join(" | "));
-
-      // Keep the spinner visible until Cesium has had a chance to render
-      // the newly-added flood / wildfire entities on screen.
-      await new Promise(resolve =>
-        requestAnimationFrame(() =>
-          requestAnimationFrame(resolve)
-        )
-      );
-
-    } finally {
-
-      if (generation === hazardGeneration) {
-        setMapLoading(false);
-      }
-
+    for (const ds of floodSources) {
+      ds.show = els.floodRisk.checked;
     }
+
+    if (wildfireSource) {
+      wildfireSource.show = els.wildfire.checked;
+    }
+
+    const parts = [];
+
+    if (els.floodRisk.checked) {
+      const n = Array.isArray(flood.sourceDetails) ? flood.sourceDetails.length : 0;
+      parts.push(
+        `Flood: ${flood.count} mapped feature(s)` +
+        (n ? ` · ${n} direct source(s)` : "")
+      );
+    } else {
+      parts.push("Flood: off");
+    }
+
+    if (els.wildfire.checked) {
+      parts.push(`Wildfire: ${fire.count} perimeter(s)`);
+    } else {
+      parts.push("Wildfire: off");
+    }
+
+    setStatus(parts.join(" | "));
+    viewer.scene.requestRender();
+
+    return { flood, fire, generation };
   }
 
   function siteSummaryHtml(site) {
@@ -1338,17 +1353,41 @@
   }
 
   async function selectSite(site, duration = 1.4, options = {}) {
+    const loadId = ++mapLoadGeneration;
+
     selectedSite = site;
     searchedLocation = null;
     if (searchMarker) { viewer.entities.remove(searchMarker); searchMarker = null; }
     if (els.select) els.select.value = String(site.id);
     if (els.summary) els.summary.innerHTML = siteSummaryHtml(site);
     setSearchMessage("");
-    const zoomPromise = zoomToLocation(site, duration);
-    const hazardPromise = refreshHazards();
-    loadRiskScores(site);
-    if (options.waitForHazards) await Promise.all([zoomPromise, hazardPromise]);
-    return hazardPromise;
+
+    const locationName = site.stateLabel || site.officialName || "selected datacenter";
+    setMapLoading(true, `Loading all data for ${locationName}…`);
+
+    try {
+      // These three jobs run in parallel, but the spinner stays visible until
+      // ALL of them have completed: camera/map, flood+wildfire, and risk scores.
+      const zoomPromise = zoomToLocation(site, duration);
+      const hazardPromise = refreshHazards();
+      const riskPromise = loadRiskScores(site);
+
+      await Promise.all([zoomPromise, hazardPromise, riskPromise]);
+
+      if (loadId !== mapLoadGeneration) return null;
+
+      // The requests are complete. Now wait until Cesium has actually finished
+      // loading/rendering the tiles for the destination view.
+      await waitForCesiumSceneReady(loadId);
+
+      if (loadId !== mapLoadGeneration) return null;
+      return hazardPromise;
+    } finally {
+      // Only the newest location load is allowed to hide the spinner.
+      if (loadId === mapLoadGeneration) {
+        setMapLoading(false);
+      }
+    }
   }
 
   function showOverview() {
@@ -1451,7 +1490,7 @@
       await selectSite(site, 1.35, { waitForHazards: true });
       if (!playActive || runId !== playRunId) break;
 
-      setStatus(`PLAY ${i + 1}/${tourSites.length}: flood and wildfire layers loaded for ${site.officialName}.`);
+      setStatus(`PLAY ${i + 1}/${tourSites.length}: all data loaded for ${site.officialName}.`);
       await waitForPlay(PLAY_DWELL_MS, runId);
     }
 
