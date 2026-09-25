@@ -1,91 +1,71 @@
 # US Data Center Climate Risk Explorer
 
-Static browser map plus a small edge Worker. The public repository contains no private token and no upstream dataset names or endpoint URLs.
+Cesium application for the 60 user-supplied US data-center coordinates, enriched with facility names and owner/operator information.
 
-## What the map does
+## Important coordinate rule
 
-- Loads all data-center coordinates from `data/datacenters.json`.
-- Hover text shows the original state value, facility name, owner/operator, closest city, coordinates, and match-confidence flag.
-- Clicking a marker opens an oblique 3D site view and loads mapped flood hazard plus historical wildfire perimeters within **10 km**.
-- Hazard polygons are clipped to the exact 10 km circle in the browser.
-- Historical wildfire coverage is selected automatically by state and reporting period.
-- Hover a wildfire perimeter to see fire name, year, and mapped area.
-- Shows 3D terrain, nearby 3D buildings, and satellite imagery when the Worker is fully configured.
+Marker coordinates are taken **only** from the original user file `Datacentre_coords_version_#1.csv` (`Lat` and `Lon`). Research is used only for the displayed data-center name, owner/operator and closest-city metadata. The researched facility location is never substituted for the original GPS coordinate.
 
-The flood layer is a mapped hazard extent, not a water-depth model. Historical wildfire perimeters are not necessarily a complete census and can vary by reporting period and local collection rules.
+## Map modes
 
-## Privacy / repository structure
+- **ANALYTICAL** — terrain, 3D buildings, satellite basemap, mapped 1% / 0.2% annual-chance flood hazard polygons and historical wildfire perimeters.
+- **REALISTIC** — Google Photorealistic 3D for visual inspection of the selected/search location. There are **no real-time flood or wildfire feeds** in this project. Switch to ANALYTICAL for hazard overlays.
 
-The browser receives map configuration and temporary 3D asset credentials from the Worker. Long-lived credentials and all upstream endpoint URLs stay in the Worker environment and are not committed to the repository.
+## Historical/static hazard loading
 
-`public-config.js` contains only the public Worker URL and the analysis radius.
+There is no 10 km boundary and no polygon clipping. Hazard polygons are streamed for the current visible map area in small cached cells. When a data center/search result is selected, the application also ensures the surrounding selected-site cells are queried so the local flood map does not disappear because of camera framing.
 
-## 1. Configure the Worker
+Flood requests use the same simple bounding-box GeoJSON query structure used in the earlier working Texas version; geometry-simplification parameters that could suppress or invalidate flood geometry have been removed.
 
-Deploy `cloudflare-worker/src/index.js`, then configure these Worker environment values privately:
+Wildfire uses historical perimeter datasets only. The recent/current wildfire feed has been removed.
 
-- `PLATFORM_ACCESS_TOKEN` — long-lived access token for the 3D asset service.
-- `ASSET_API_BASE` — base URL used to request temporary asset endpoints.
-- `BASEMAP_TILE_URL` — satellite tile URL template.
-- `BASEMAP_CREDIT` — attribution text required by the imagery license.
-- `FLOOD_DATASET_URL` — flood-hazard query endpoint.
-- `FIRE_DATASET_A_URL` — historical wildfire endpoint used for Texas.
-- `FIRE_DATASET_B_URL` — historical wildfire endpoint used for California.
-- `FIRE_DATASET_C_URL` — historical wildfire endpoint used for older records in other states.
-- `FIRE_DATASET_D_URL` — historical wildfire endpoint used for recent records in other states.
-- `ALLOWED_ORIGINS` — allowed frontend origins.
+## Search
 
-Do not commit these values. For local Worker development, copy `.dev.vars.example` to `.dev.vars`; `.gitignore` excludes it.
+The search box accepts either:
 
-If you are upgrading from the previous project, move the existing endpoint URLs and access token from the old Worker code/configuration into these generic Worker environment values, then remove the old Worker deployment.
+- `latitude, longitude` (works without a geocoder), or
+- a postal/street address (requires `GEOCODER_URL` in Cloudflare).
 
-## 2. Public frontend configuration
+If the resulting location is outside the continental US, the modal says: **“Data for this location is a tailored request”**.
 
-Edit `public-config.js` and set only the deployed Worker URL:
+## Cloudflare variables
 
-```js
-window.APP_CONFIG = {
-  SERVICE_BROKER_URL: "https://YOUR-WORKER.workers.dev",
-  RISK_RADIUS_KM: 10
-};
-```
+Configure these in **Cloudflare -> Workers & Pages -> data-centers -> Settings -> Variables and Secrets**:
 
-No dataset endpoint or private access token belongs in this file.
+- `CESIUM_ION_TOKEN` (Secret)
+- `ALLOWED_ORIGINS`
+- `ASSET_API_BASE`
+- `BASEMAP_CREDIT`
+- `BASEMAP_TILE_URL`
+- `FLOOD_DATASET_URL`
+- `FIRE_DATASET_A_URL`
+- `FIRE_DATASET_B_URL`
+- `FIRE_DATASET_C_URL`
+- `GEOCODER_URL`
 
-## 3. Test locally
+No upstream data URL or long-lived token needs to be committed to GitHub.
 
-From the project root:
+### GEOCODER_URL
+
+Set `GEOCODER_URL` only in the Cloudflare Worker environment. The Worker supports a conventional geocoder search endpoint and automatically adds the query and JSON response parameters. The actual provider URL does not need to be committed to GitHub.
+
+For GitHub Pages, `ALLOWED_ORIGINS` should include:
+
+`http://localhost:8000,http://127.0.0.1:8000,https://everloop-agency.github.io`
+
+## Deploy
+
+1. Deploy `cloudflare-worker/src/index.js` to the `data-centers` Worker.
+2. Keep the variables/secrets in Cloudflare.
+3. Push the web files to GitHub `Everloop-Agency/datacenters`.
+4. GitHub Pages publishes from `main` / root.
+
+Local test:
 
 ```bash
 python3 -m http.server 8000
 ```
 
-Open `http://localhost:8000`.
+Live site:
 
-## 4. Static hosting
-
-The frontend can be published from any static web host. Commit the project files, configure the Worker URL in `public-config.js`, and allow the deployed site origin in the Worker.
-
-## Security checklist
-
-- Keep the long-lived access token only in the Worker environment.
-- Keep all upstream dataset URLs only in the Worker environment.
-- Keep required third-party attribution in the runtime `BASEMAP_CREDIT` value when the imagery license requires it.
-- Never commit `.dev.vars`, `.env`, or similar secret files.
-- Restrict allowed origins to the deployed site plus localhost if needed.
-- Rotate any credential that was ever committed accidentally.
-
-## Data enrichment caveat
-
-The original coordinate table does not contain company/facility identifiers. The enriched JSON/CSV therefore contains best-effort facility matches with a confidence flag. Records marked `low` confidence intentionally avoid claiming an owner/operator when evidence was insufficient.
-
-## Files
-
-- `index.html` — page shell
-- `styles.css` — UI styling
-- `app.js` — viewer, markers, hover, and 10 km hazard queries
-- `public-config.js` — public Worker URL only
-- `data/datacenters.json` — runtime site metadata
-- `data/datacenters_enriched.csv` — editable enriched table
-- `cloudflare-worker/` — generic proxy and private configuration boundary
-- `.gitignore` — excludes common secret files
+`https://everloop-agency.github.io/datacenters/`

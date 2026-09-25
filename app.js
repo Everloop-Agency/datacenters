@@ -10,14 +10,6 @@
   const FIRE_MAX_YEAR = 2025;
   const REALISTIC_TRIGGER_HEIGHT_M = Number(cfg.REALISTIC_TRIGGER_HEIGHT_M) || 8500;
   const REALISTIC_TRIGGER_DISTANCE_KM = Number(cfg.REALISTIC_TRIGGER_DISTANCE_KM) || 18;
-  const REALISTIC_FLOOD_RADIUS_KM = Number(cfg.REALISTIC_FLOOD_RADIUS_KM) || 12;
-  const REALISTIC_OVERLAY_GRID = 2;
-  const REALISTIC_OVERLAY_LIFT_M = 1.8;
-  const LIVE_FLOOD_LAYERS = {
-    copernicus: { checkbox: "liveCopernicus", alpha: 0.80, lift: 0.00 },
-    nasa1d: { checkbox: "liveNasa1d", alpha: 0.68, lift: 0.35 },
-    nasa3d: { checkbox: "liveNasa3d", alpha: 0.58, lift: 0.70 }
-  };
   const US_BOUNDS = { west: -125.2, south: 24.1, east: -66.0, north: 50.2 };
   const TEXAS_BOUNDS = { west: -106.7, south: 25.7, east: -93.4, north: 36.6 };
   const CALIFORNIA_BOUNDS = { west: -124.6, south: 32.3, east: -114.0, north: 42.2 };
@@ -34,9 +26,6 @@
     wildfire: document.getElementById("wildfireToggle"),
     buildings: document.getElementById("buildingsToggle"),
     satellite: document.getElementById("satelliteToggle"),
-    liveCopernicus: document.getElementById("liveCopernicusToggle"),
-    liveNasa1d: document.getElementById("liveNasa1dToggle"),
-    liveNasa3d: document.getElementById("liveNasa3dToggle"),
     modeStatus: document.getElementById("modeStatus"),
     legendNote: document.getElementById("legendNote"),
     hover: document.getElementById("hoverCard"),
@@ -57,8 +46,6 @@
   let viewMode = "analytical";
   let manualModeLock = false;
   let modeSwitchBusy = false;
-  let realisticFloodEntities = [];
-  let realisticOverlayGeneration = 0;
   let sites = [];
   let selectedSite = null;
   let flood1Source = null;
@@ -205,13 +192,13 @@
     });
     if (els.modeStatus) {
       els.modeStatus.textContent = viewMode === "realistic"
-        ? "REALISTIC · Google Photorealistic 3D + observed flooding"
+        ? "REALISTIC · Google Photorealistic 3D"
         : "ANALYTICAL · World Terrain + 3D Buildings";
     }
     if (els.legendNote) {
       els.legendNote.textContent = viewMode === "realistic"
-        ? "REALISTIC mode: latest observed flood imagery is rendered slightly above terrain around the focused location so water remains visible between photorealistic buildings."
-        : "ANALYTICAL mode streams national flood and wildfire polygons by map view; previously requested cells are cached for faster revisits.";
+        ? "REALISTIC mode: Google Photorealistic 3D. Switch to ANALYTICAL to display mapped flood hazard and historical wildfire overlays."
+        : "ANALYTICAL mode streams mapped flood-hazard polygons and historical wildfire perimeters by map view; previously requested cells are cached for faster revisits.";
     }
   }
 
@@ -252,109 +239,28 @@
     };
   }
 
-  function clearRealisticFloodSurface() {
-    realisticOverlayGeneration++;
-    for (const entity of realisticFloodEntities) viewer.entities.remove(entity);
-    realisticFloodEntities = [];
-  }
-
-  function localFloodBounds(location, radiusKm = REALISTIC_FLOOD_RADIUS_KM) {
-    const lat = Number(location.lat), lon = Number(location.lon);
-    const dLat = radiusKm / 111.32;
-    const cosLat = Math.max(0.18, Math.cos(Cesium.Math.toRadians(lat)));
-    const dLon = radiusKm / (111.32 * cosLat);
-    return { west: lon - dLon, south: lat - dLat, east: lon + dLon, north: lat + dLat };
-  }
-
-  function splitBounds(bounds, n = REALISTIC_OVERLAY_GRID) {
-    const out = [];
-    const dx = (bounds.east - bounds.west) / n;
-    const dy = (bounds.north - bounds.south) / n;
-    for (let iy = 0; iy < n; iy++) for (let ix = 0; ix < n; ix++) {
-      out.push({
-        west: bounds.west + ix * dx,
-        east: bounds.west + (ix + 1) * dx,
-        south: bounds.south + iy * dy,
-        north: bounds.south + (iy + 1) * dy
-      });
-    }
-    return out;
-  }
-
-  function isoDateDaysAgo(days) {
-    const d = new Date(Date.now() - Number(days || 0) * 86400000);
-    return d.toISOString().slice(0, 10);
-  }
-
-  function liveFloodOverlayUrl(source, bounds) {
-    const q = new URLSearchParams({
-      source,
-      west: String(bounds.west), south: String(bounds.south),
-      east: String(bounds.east), north: String(bounds.north),
-      date: isoDateDaysAgo(source.startsWith("nasa") ? 1 : 0)
-    });
-    return `${SERVICE_BROKER_URL}/api/live-flood-overlay?${q.toString()}`;
-  }
-
-  async function sampleTileHeights(tiles) {
-    if (!analyticalTerrainProvider || !Cesium.sampleTerrainMostDetailed) return tiles.map(() => 0);
-    const points = tiles.map(tile => Cesium.Cartographic.fromDegrees(
-      (tile.west + tile.east) / 2,
-      (tile.south + tile.north) / 2
-    ));
-    try {
-      const sampled = await Cesium.sampleTerrainMostDetailed(analyticalTerrainProvider, points);
-      return sampled.map(p => Number.isFinite(p.height) ? p.height : 0);
-    } catch (_) {
-      return tiles.map(() => 0);
-    }
-  }
-
-  async function refreshRealisticFloodSurface(location = activeFocusLocation()) {
-    if (viewMode !== "realistic" || !location || !BROKER_CONFIGURED) return;
-    const generation = ++realisticOverlayGeneration;
-    for (const entity of realisticFloodEntities) viewer.entities.remove(entity);
-    realisticFloodEntities = [];
-
-    const activeLayers = Object.entries(LIVE_FLOOD_LAYERS).filter(([, layer]) => els[layer.checkbox]?.checked);
-    if (!activeLayers.length) {
-      setStatus("REALISTIC mode: photorealistic 3D active; observed flood overlays are switched off.");
-      return;
-    }
-
-    const tiles = splitBounds(localFloodBounds(location));
-    const heights = await sampleTileHeights(tiles);
-    if (generation !== realisticOverlayGeneration) return;
-
-    for (const [source, layer] of activeLayers) {
-      for (let i = 0; i < tiles.length; i++) {
-        const tile = tiles[i];
-        const baseHeight = (heights[i] || 0) + REALISTIC_OVERLAY_LIFT_M + layer.lift;
-        const entity = viewer.entities.add({
-          name: `Observed flood overlay — ${source}`,
-          rectangle: {
-            coordinates: Cesium.Rectangle.fromDegrees(tile.west, tile.south, tile.east, tile.north),
-            height: baseHeight,
-            material: new Cesium.ImageMaterialProperty({
-              image: liveFloodOverlayUrl(source, tile),
-              transparent: true,
-              color: Cesium.Color.WHITE.withAlpha(layer.alpha)
-            })
-          }
-        });
-        realisticFloodEntities.push(entity);
-      }
-    }
-    setStatus(`${location.label}: REALISTIC 3D active with live observed flood overlays in a ${REALISTIC_FLOOD_RADIUS_KM} km local window.`);
+  function activeFocusLocation() {
+    if (selectedSite) return {
+      lat: Number(selectedSite.lat), lon: Number(selectedSite.lon),
+      label: `${selectedSite.stateLabel} / ${selectedSite.closestCity}`
+    };
+    if (searchedLocation) return {
+      lat: Number(searchedLocation.lat), lon: Number(searchedLocation.lon),
+      label: searchedLocation.label || "Searched location"
+    };
+    const c = viewer?.camera?.positionCartographic;
+    if (!c) return null;
+    return {
+      lat: Cesium.Math.toDegrees(c.latitude),
+      lon: Cesium.Math.toDegrees(c.longitude),
+      label: "Current view"
+    };
   }
 
   async function setViewMode(mode, { focus = activeFocusLocation(), manual = false } = {}) {
     if (!['realistic', 'analytical'].includes(mode) || modeSwitchBusy) return;
     if (manual) manualModeLock = true;
-    if (mode === viewMode) {
-      if (mode === "realistic") await refreshRealisticFloodSurface(focus);
-      return;
-    }
+    if (mode === viewMode) return;
     modeSwitchBusy = true;
     try {
       if (mode === "realistic") {
@@ -368,10 +274,9 @@
         viewer.scene.fog.enabled = false;
         google.show = true;
         updateModeUI();
-        await refreshRealisticFloodSurface(focus);
+        setStatus(`${focus?.label || "Selected location"}: REALISTIC 3D active. Switch to ANALYTICAL for mapped flood hazard and historical wildfire overlays.`);
       } else {
         viewMode = "analytical";
-        clearRealisticFloodSurface();
         if (googlePhotorealisticTileset) googlePhotorealisticTileset.show = false;
         viewer.scene.globe.show = true;
         viewer.scene.fog.enabled = true;
@@ -385,7 +290,6 @@
     } catch (error) {
       console.error("View mode error", error);
       viewMode = "analytical";
-      clearRealisticFloodSurface();
       if (googlePhotorealisticTileset) googlePhotorealisticTileset.show = false;
       viewer.scene.globe.show = true;
       viewer.scene.fog.enabled = true;
@@ -573,6 +477,20 @@
     return cells;
   }
 
+  function bboxAroundFocus(location, km = 35) {
+    if (!location || !Number.isFinite(Number(location.lat)) || !Number.isFinite(Number(location.lon))) return null;
+    const lat = Number(location.lat), lon = Number(location.lon);
+    const dLat = km / 111.32;
+    const dLon = km / (111.32 * Math.max(0.2, Math.cos(Cesium.Math.toRadians(lat))));
+    return clampBboxToUS({ west: lon - dLon, south: lat - dLat, east: lon + dLon, north: lat + dLat });
+  }
+
+  function mergeCells(primary, extra) {
+    const map = new Map();
+    for (const cell of [...(primary || []), ...(extra || [])]) map.set(cellKey("cell", cell), cell);
+    return [...map.values()];
+  }
+
   function cellKey(prefix, bbox) {
     const f = n => Number(n).toFixed(4);
     return `${prefix}:${f(bbox.west)},${f(bbox.south)},${f(bbox.east)},${f(bbox.north)}`;
@@ -601,7 +519,7 @@
     return promise;
   }
 
-  function commonHazardParams(bbox, offset, simplifyDeg) {
+  function commonHazardParams(bbox, offset) {
     return new URLSearchParams({
       where: "1=1",
       geometry: `${bbox.west},${bbox.south},${bbox.east},${bbox.north}`,
@@ -613,15 +531,13 @@
       returnGeometry: "true",
       f: "geojson",
       resultOffset: String(offset),
-      resultRecordCount: "2000",
-      geometryPrecision: "6",
-      maxAllowableOffset: String(simplifyDeg)
+      resultRecordCount: "2000"
     });
   }
 
-  async function fetchPage(kind, dataset, bbox, offset, simplifyDeg) {
+  async function fetchPage(kind, dataset, bbox, offset) {
     if (!BROKER_CONFIGURED) throw new Error("Service broker is not configured");
-    const q = commonHazardParams(bbox, offset, simplifyDeg);
+    const q = commonHazardParams(bbox, offset);
     let path = "/api/flood";
     if (kind === "fire") {
       q.set("dataset", dataset);
@@ -638,10 +554,10 @@
     return geo;
   }
 
-  async function fetchPaged(kind, dataset, bbox, simplifyDeg, maxPages = 8) {
+  async function fetchPaged(kind, dataset, bbox, maxPages = 8) {
     const all = [];
     for (let offset = 0, page = 0; page < maxPages; page++, offset += 2000) {
-      const geo = await fetchPage(kind, dataset, bbox, offset, simplifyDeg);
+      const geo = await fetchPage(kind, dataset, bbox, offset);
       const features = Array.isArray(geo?.features) ? geo.features : [];
       all.push(...features);
       if (features.length < 2000) break;
@@ -663,7 +579,7 @@
   }
 
   function wildfireDatasetsForView(bbox) {
-    const datasets = ["c", "d"];
+    const datasets = ["c"];
     if (bboxIntersects(bbox, TEXAS_BOUNDS)) datasets.unshift("a");
     if (bboxIntersects(bbox, CALIFORNIA_BOUNDS)) datasets.unshift("b");
     return [...new Set(datasets)];
@@ -710,7 +626,10 @@
     for (const entity of ds.entities.values) {
       if (entity.polygon) {
         entity.polygon.material = color;
-        entity.polygon.outline = false;
+        entity.polygon.outline = true;
+        entity.polygon.outlineColor = color.withAlpha(0.95);
+        entity.polygon.outlineWidth = 1.5;
+        entity.polygon.classificationType = Cesium.ClassificationType.TERRAIN;
         entity.polygon.zIndex = 30;
       }
     }
@@ -754,13 +673,6 @@
       const cat = String(p.FEATURE_CA || p.FEATURECAT || "").toUpperCase();
       if (/PRESCRIB|RX/.test(cat)) include = false;
       if (year && year > 2019) include = false;
-    } else if (dataset === "d") {
-      name = p.attr_IncidentName || p.poly_IncidentName || p.IncidentName || name;
-      year = yearFromDateValue(p.attr_FireDiscoveryDateTime ?? p.FireDiscoveryDateTime);
-      acres = Number(p.poly_GISAcres ?? p.attr_IncidentSize ?? p.GISAcres);
-      const category = String(p.attr_IncidentTypeCategory || p.IncidentTypeCategory || "").toUpperCase();
-      if (category && category !== "WF") include = false;
-      if (year && (year < 2020 || year > FIRE_MAX_YEAR)) include = false;
     }
 
     if (!Number.isFinite(year)) year = null;
@@ -798,13 +710,13 @@
     return ds;
   }
 
-  async function loadFloodForCells(cells, simplifyDeg) {
+  async function loadFloodForCells(cells) {
     if (!els.flood1.checked && !els.flood02.checked) return { flood1: [], flood02: [], errors: [] };
     const errors = [];
     const chunks = await mapLimit(cells, 5, async cell => {
-      const key = cellKey(`flood-${simplifyDeg.toExponential(1)}`, cell);
+      const key = cellKey("flood", cell);
       try {
-        return await cachedCell(key, () => fetchPaged("flood", "", cell, simplifyDeg));
+        return await cachedCell(key, () => fetchPaged("flood", "", cell));
       } catch (error) {
         errors.push(error.message);
         return [];
@@ -823,16 +735,16 @@
     return { flood1, flood02, errors };
   }
 
-  async function loadWildfireForCells(cells, bbox, simplifyDeg) {
+  async function loadWildfireForCells(cells, bbox) {
     if (!els.wildfire.checked) return { features: [], errors: [] };
     const datasets = wildfireDatasetsForView(bbox);
     const jobs = [];
     for (const dataset of datasets) for (const cell of cells) jobs.push({ dataset, cell });
     const errors = [];
     const chunks = await mapLimit(jobs, 6, async job => {
-      const key = cellKey(`fire-${job.dataset}-${simplifyDeg.toExponential(1)}`, job.cell);
+      const key = cellKey(`fire-${job.dataset}`, job.cell);
       try {
-        const features = await cachedCell(key, () => fetchPaged("fire", job.dataset, job.cell, simplifyDeg));
+        const features = await cachedCell(key, () => fetchPaged("fire", job.dataset, job.cell));
         return features.map(feature => ({ feature, dataset: job.dataset }));
       } catch (error) {
         errors.push(`${job.dataset}: ${error.message}`);
@@ -867,7 +779,7 @@
         : "current map view";
     const floodError = floodResult.errors.length ? `; flood warnings: ${[...new Set(floodResult.errors)].slice(0, 2).join(" | ")}` : "";
     const fireError = fireResult.errors.length ? `; wildfire warnings: ${[...new Set(fireResult.errors)].slice(0, 2).join(" | ")}` : "";
-    setStatus(`${locationText}: ${floodResult.flood1.length} one-percent + ${floodResult.flood02.length} 0.2-percent flood polygons; ${fireResult.features.length} wildfire perimeters; ${cells.length} cached/query cells${floodError}${fireError}`);
+    setStatus(`${locationText}: ${floodResult.flood1.length} one-percent + ${floodResult.flood02.length} 0.2-percent flood polygons; ${fireResult.features.length} historical wildfire perimeters; ${cells.length} cached/query cells${floodError}${fireError}`);
   }
 
   async function refreshHazardsForView() {
@@ -883,20 +795,21 @@
       return;
     }
 
-    const cells = splitIntoCells(bbox);
+    let cells = splitIntoCells(bbox);
+    const focusBbox = bboxAroundFocus(activeFocusLocation(), 35);
+    if (focusBbox) cells = mergeCells(cells, splitIntoCells(focusBbox));
     if (!cells.length || cells.length > MAX_CELLS_PER_VIEW) {
-      setStatus("Zoom in slightly to load the detailed flood and wildfire polygons efficiently.");
+      setStatus("Zoom in slightly to load the detailed flood and historical wildfire polygons efficiently.");
       return;
     }
 
     const generation = ++hazardGeneration;
     lastHazardViewLabel = `${bbox.west.toFixed(3)},${bbox.south.toFixed(3)},${bbox.east.toFixed(3)},${bbox.north.toFixed(3)}`;
-    const simplifyDeg = Math.max(0.000015, Math.min(0.0012, span / 1800));
-    setStatus(`Loading national flood + wildfire data for the current view…`);
+    setStatus(`Loading mapped flood hazard + historical wildfire data for the current view…`);
 
     const [floodResult, fireResult] = await Promise.all([
-      loadFloodForCells(cells, simplifyDeg),
-      loadWildfireForCells(cells, bbox, simplifyDeg)
+      loadFloodForCells(cells),
+      loadWildfireForCells(cells, bbox)
     ]);
 
     if (generation !== hazardGeneration) return;
@@ -985,7 +898,7 @@
     });
   }
 
-  function flyToCoordinates(lat, lon, height = 13500) {
+  function flyToCoordinates(lat, lon, height = 11000) {
     return new Promise(resolve => {
       viewer.camera.flyTo({
         destination: Cesium.Cartesian3.fromDegrees(lon, lat, height),
@@ -1029,7 +942,7 @@
   }
 
   function updateSummary(site) {
-    els.summary.innerHTML = `<strong>${escapeHtml(site.officialName)}</strong><br>${escapeHtml(site.stateLabel)} · ${escapeHtml(site.closestCity)}<br><span style="opacity:.72">Owner/operator: ${escapeHtml(site.ownerOperator)} · ${site.lat.toFixed(4)}, ${site.lon.toFixed(4)}</span>`;
+    els.summary.innerHTML = `<strong>${escapeHtml(site.officialName)}</strong><br>${escapeHtml(site.stateLabel)} · ${escapeHtml(site.closestCity)}<br><span style="opacity:.72">Owner/operator: ${escapeHtml(site.ownerOperator)} · ${Number(site.lat).toFixed(3)}, ${Number(site.lon).toFixed(3)}</span>`;
   }
 
   async function terrainHeightAt(lat, lon) {
@@ -1042,9 +955,9 @@
   }
 
   async function flyToSite(site, close = false) {
-    if (!close) return flyToCoordinates(site.lat, site.lon, 13500);
+    if (!close) return flyToCoordinates(Number(site.lat), Number(site.lon), 11000);
     const ground = await terrainHeightAt(site.lat, site.lon);
-    const target = Cesium.Cartesian3.fromDegrees(site.lon, site.lat, ground);
+    const target = Cesium.Cartesian3.fromDegrees(Number(site.lon), Number(site.lat), ground);
     const sphere = new Cesium.BoundingSphere(target, 10);
     return new Promise(resolve => {
       viewer.camera.flyToBoundingSphere(sphere, {
@@ -1052,7 +965,7 @@
         offset: new Cesium.HeadingPitchRange(
           Cesium.Math.toRadians(24),
           Cesium.Math.toRadians(-34),
-          4800
+          3600
         ),
         complete: resolve,
         cancel: resolve
@@ -1138,11 +1051,6 @@
     });
     els.buildings.addEventListener("change", () => { if (buildingsTileset) buildingsTileset.show = viewMode === "analytical" && els.buildings.checked; });
     els.satellite.addEventListener("change", () => { if (satelliteLayer) satelliteLayer.show = viewMode === "analytical" && els.satellite.checked; });
-    [els.liveCopernicus, els.liveNasa1d, els.liveNasa3d].forEach(input => {
-      input.addEventListener("change", () => {
-        if (viewMode === "realistic") refreshRealisticFloodSurface().catch(error => setStatus(`Observed flood overlay error: ${error.message}`));
-      });
-    });
     els.searchForm.addEventListener("submit", event => {
       event.preventDefault();
       searchLocation();
@@ -1213,8 +1121,6 @@
       normalizeSiteLabel,
       makeFloodSource,
       makeWildfireSource,
-      localFloodBounds,
-      splitBounds,
       activeFocusLocation,
       setViewerForTest(value) { viewer = value; }
     };

@@ -18,7 +18,7 @@
   <section id="panel" aria-label="Data center climate risk controls">
     <div class="eyebrow">Physical climate risk</div>
     <h1>US Data Center Climate Risk Explorer</h1>
-    <p class="intro">Use <b>ANALYTICAL</b> mode for national flood/wildfire assessment, or <b>REALISTIC</b> mode for Google Photorealistic 3D with live observed flooding around the selected location.</p>
+    <p class="intro">Use <b>ANALYTICAL</b> mode for mapped flood hazard and historical wildfire assessment, or <b>REALISTIC</b> mode for Google Photorealistic 3D around the selected location.</p>
 
     <label class="field-label" for="siteSelect">Data center</label>
     <select id="siteSelect" aria-label="Select data center"></select>
@@ -52,14 +52,6 @@
       <label><input id="buildingsToggle" type="checkbox" checked /> 3D buildings</label>
       <label><input id="satelliteToggle" type="checkbox" checked /> Satellite imagery</label>
     </div>
-
-    <div class="live-flood-controls">
-      <div class="group-label">Observed flooding · REALISTIC mode</div>
-      <label><input id="liveCopernicusToggle" type="checkbox" checked /> Copernicus observed flood extent</label>
-      <label><input id="liveNasa1dToggle" type="checkbox" checked /> NASA VIIRS flood · 1 day</label>
-      <label><input id="liveNasa3dToggle" type="checkbox" /> NASA VIIRS flood · 3 day</label>
-    </div>
-
     <div id="status" role="status">Loading sites…</div>
     <div id="configWarning" class="warning" hidden></div>
   </section>
@@ -77,7 +69,7 @@
     <div><span class="swatch flood1"></span> 1% annual-chance flood area</div>
     <div><span class="swatch flood02"></span> 0.2% annual-chance flood area</div>
     <div><span class="swatch wildfire"></span> Historical wildfire perimeter</div>
-    <small id="legendNote">ANALYTICAL mode streams national hazard polygons by map view. REALISTIC mode loads photorealistic 3D and live observed flood imagery only around the current focus for speed.</small>
+    <small id="legendNote">ANALYTICAL mode streams mapped flood-hazard polygons and historical wildfire perimeters for the current map view. REALISTIC mode shows photorealistic 3D only; switch back to ANALYTICAL for hazard overlays.</small>
   </div>
 
   <footer id="footer">
