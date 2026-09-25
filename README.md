@@ -69,3 +69,11 @@ python3 -m http.server 8000
 Live site:
 
 `https://everloop-agency.github.io/datacenters/`
+
+## Flood risk layer
+
+The **Flood risk** checkbox now controls one national flood map overlay based on FEMA's effective National Flood Hazard Layer (NFHL), **Flood Hazard Zones (MapServer layer 28)**. The layer is loaded directly by Cesium and is ON by default, so the default **Texas - 7 / El Paso** view displays FEMA mapped flood-hazard zones without requiring `FLOOD_DATASET_URL` in Cloudflare.
+
+When an Abilene-area data center is selected, the same checkbox also enables the local City of Abilene 100-year and 500-year flood-zone polygons used by the standalone Abilene project. The local Abilene polygons are additional detail; the FEMA national layer remains the base flood map.
+
+Official national map service: `https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer` (Flood Hazard Zones layer `28`).
