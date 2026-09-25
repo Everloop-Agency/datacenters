@@ -13,6 +13,20 @@
   const GOOGLE_2D_ION_ASSET_ID = 3830184;
   const CESIUM_ION_TOKEN_FALLBACK = String(cfg.CESIUM_ION_TOKEN || "").trim();
 
+  // PLAY TOUR CONFIGURATION — edit these three names to choose the datacenters shown by Play.
+  // Use the exact `officialName` values from data/datacenters.json.
+  const PLAY_DATACENTER_NAMES = [
+    "Meta El Paso Data Center",
+    "Stargate Abilene",
+    "Hanover Technology Park"
+  ];
+  const PLAY_DWELL_MS = 4500;
+  const PLAY_ZOOM_OUT_KM = 180;
+
+  // Automatically switch to high-detail Google Photorealistic 3D only at very close zoom.
+  const AUTO_3D_ENTER_HEIGHT_METERS = 8500;
+  const AUTO_3D_EXIT_HEIGHT_METERS = 22000;
+
   // Same WeatherTradeNet risk-score structure and colors used by the Cotton Risk Management app.
   // The browser never receives the WeatherTradeNet API key; it calls the Cloudflare Worker instead.
   const HAZARDS = [
@@ -91,6 +105,7 @@
     warning: document.getElementById("configWarning"),
     overview: document.getElementById("overviewBtn"),
     siteView: document.getElementById("siteViewBtn"),
+    play: document.getElementById("playBtn"),
     floodRisk: document.getElementById("floodRiskToggle"),
     wildfire: document.getElementById("wildfireToggle"),
     satellite: document.getElementById("satelliteToggle"),
@@ -105,6 +120,8 @@
     riskWidget: document.getElementById("riskWidget"),
     riskWidgetIcon: document.getElementById("riskWidgetIcon"),
     riskWidgetPanel: document.getElementById("riskWidgetPanel"),
+    riskWidgetDragHandle: document.getElementById("riskWidgetDragHandle"),
+    riskLegend: document.getElementById("riskLegend"),
     riskWidgetMinimize: document.getElementById("riskWidgetMinimize"),
     riskHeatmapContent: document.getElementById("riskHeatmapContent"),
     measureToggle: document.getElementById("measureToggle"),
@@ -141,6 +158,11 @@
   let measureLineEntity = null;
   let measureHoverLabel = null;
   let scaleLastUpdate = 0;
+  let playActive = false;
+  let playRunId = 0;
+  let auto3DActive = false;
+  let auto3DSwitching = false;
+  let riskWidgetDraggedRecently = false;
 
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, c => ({
@@ -171,6 +193,10 @@
     return `rgba(159,116,151,${alpha})`;
   }
 
+  function riskLegendMarkup() {
+    return `<div class="risk-legend" aria-label="Risk rating color scale"><span>Risk rating</span>${[1, 2, 3, 4, 5].map(rating => `<span class="risk-legend-step"><span class="risk-swatch" style="background:${riskColor(rating)}"></span><b>${rating}</b></span>`).join("")}</div>`;
+  }
+
   function renderRiskHeatmap(payload) {
     if (!els.riskHeatmapContent) return;
     const groupData = HAZARD_GROUPS.map(group => ({
@@ -199,9 +225,19 @@
     return `${Number(location?.lat).toFixed(5)},${Number(location?.lon).toFixed(5)}`;
   }
 
+  function clampRiskWidgetToViewport() {
+    if (!els.riskWidget || !els.riskWidget.style.left) return;
+    const rect = els.riskWidget.getBoundingClientRect();
+    const left = Math.max(0, Math.min(window.innerWidth - rect.width, rect.left));
+    const top = Math.max(0, Math.min(window.innerHeight - rect.height, rect.top));
+    els.riskWidget.style.left = `${left}px`;
+    els.riskWidget.style.top = `${top}px`;
+  }
+
   function setRiskWidgetCollapsed(collapsed) {
     if (!els.riskWidget) return;
     els.riskWidget.classList.toggle("collapsed", Boolean(collapsed));
+    requestAnimationFrame(clampRiskWidgetToViewport);
   }
 
   async function loadRiskScores(location) {
@@ -320,9 +356,10 @@
     const tileset = await Cesium.createGooglePhotorealistic3DTileset({
       showCreditsOnScreen: true
     });
-    tileset.maximumScreenSpaceError = 6;
-    tileset.dynamicScreenSpaceError = true;
+    tileset.maximumScreenSpaceError = 2;
+    tileset.dynamicScreenSpaceError = false;
     tileset.preloadFlightDestinations = true;
+    tileset.preloadWhenHidden = true;
     tileset.show = false;
     viewer.scene.primitives.add(tileset);
     google3DTileset = tileset;
@@ -344,53 +381,63 @@
   }
 
   function flyToLocation3D(location, duration = 1.4) {
-    if (!location) return;
+    if (!location) return Promise.resolve();
     const lat = Number(location.lat);
     const lon = Number(location.lon);
     const bias = visibleMapBias();
     const targetLon = lon - (0.035 * bias / 0.12);
     const target = Cesium.Cartesian3.fromDegrees(targetLon, lat, 0);
-    viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(target, 25), {
+    return new Promise(resolve => viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(target, 25), {
       duration,
       offset: new Cesium.HeadingPitchRange(
         Cesium.Math.toRadians(350),
         Cesium.Math.toRadians(-48),
-        4200
-      )
-    });
+        2600
+      ),
+      complete: resolve,
+      cancel: resolve
+    }));
   }
 
-  async function set3DMode(enabled) {
+  async function set3DMode(enabled, options = {}) {
     const want3D = Boolean(enabled);
-    if (want3D === threeDMode) return;
+    const automatic = Boolean(options.automatic);
+    if (want3D === threeDMode) {
+      if (!want3D) auto3DActive = false;
+      else if (automatic) auto3DActive = true;
+      return;
+    }
     if (els.threeD) els.threeD.disabled = true;
     try {
       if (want3D) {
-        setStatus("Loading Google Photorealistic 3D…");
+        setStatus(automatic ? "Close zoom detected — loading high-detail Google Photorealistic 3D…" : "Loading Google Photorealistic 3D…");
         const tileset = await ensureGooglePhotorealistic3D();
         threeDMode = true;
-        viewer.scene.morphTo3D(0.8);
-        await new Promise(resolve => setTimeout(resolve, 900));
+        auto3DActive = automatic;
+        viewer.scene.morphTo3D(0.65);
+        await new Promise(resolve => setTimeout(resolve, 720));
         viewer.scene.globe.show = false;
         viewer.scene.fog.enabled = false;
         tileset.show = true;
         const location = activeLocation();
-        if (location) flyToLocation3D(location, 1.0);
-        setStatus("Photorealistic 3D active. Turn it off to return to the Google Satellite 2D risk map.");
+        if (location) await flyToLocation3D(location, 0.85);
+        setStatus(automatic ? "High-detail Photorealistic 3D active at close zoom." : "Photorealistic 3D active. Turn it off to return to the Google Satellite 2D risk map.");
       } else {
         threeDMode = false;
+        auto3DActive = false;
         if (google3DTileset) google3DTileset.show = false;
         viewer.scene.globe.show = true;
-        viewer.scene.morphTo2D(0.8);
-        await new Promise(resolve => setTimeout(resolve, 900));
+        viewer.scene.morphTo2D(0.65);
+        await new Promise(resolve => setTimeout(resolve, 720));
         const location = activeLocation();
-        if (location) zoomToLocation(location, 0.8);
-        else showOverview();
+        if (location) await zoomToLocation(location, 0.7);
+        else await showOverview();
         setStatus("Google Satellite 2D active.");
       }
     } catch (error) {
       console.error("Photorealistic 3D error", error);
       threeDMode = false;
+      auto3DActive = false;
       if (els.threeD) els.threeD.checked = false;
       if (google3DTileset) google3DTileset.show = false;
       viewer.scene.globe.show = true;
@@ -988,7 +1035,9 @@
     setStatus(parts.join(" | "));
 
     const warnings = [...(flood.warnings || []), ...(fire.warnings || [])];
-    setWarning(warnings.length ? `Some hazard data could not load: ${warnings.join(" | ")}` : "");
+    if (warnings.length) console.warn("Optional hazard source(s) unavailable:", warnings);
+    // Optional provider failures (for example direct FEMA NFHL CORS/network failures)
+    // are intentionally not shown as an ERROR/warning line in the control menu.
   }
 
   function siteSummaryHtml(site) {
@@ -1353,42 +1402,122 @@
     );
   }
 
-  function zoomToLocation(location, duration = 1.4) {
+  function zoomToLocation(location, duration = 1.4, km = 22) {
     if (threeDMode || viewer.scene.mode === Cesium.SceneMode.SCENE3D) {
-      flyToLocation3D(location, duration);
-      return;
+      return flyToLocation3D(location, duration);
     }
-    viewer.camera.flyTo({
-      destination: mapRectangleAround(location, 22),
-      duration
-    });
+    return new Promise(resolve => viewer.camera.flyTo({
+      destination: mapRectangleAround(location, km),
+      duration,
+      complete: resolve,
+      cancel: resolve
+    }));
   }
 
-  function selectSite(site, duration = 1.4) {
+  async function selectSite(site, duration = 1.4, options = {}) {
     selectedSite = site;
     searchedLocation = null;
     if (searchMarker) { viewer.entities.remove(searchMarker); searchMarker = null; }
     if (els.select) els.select.value = String(site.id);
     if (els.summary) els.summary.innerHTML = siteSummaryHtml(site);
     setSearchMessage("");
-    zoomToLocation(site, duration);
-    refreshHazards();
+    const zoomPromise = zoomToLocation(site, duration);
+    const hazardPromise = refreshHazards();
     loadRiskScores(site);
+    if (options.waitForHazards) await Promise.all([zoomPromise, hazardPromise]);
+    return hazardPromise;
   }
 
   function showOverview() {
     if (threeDMode || viewer.scene.mode === Cesium.SceneMode.SCENE3D) {
-      viewer.camera.flyTo({
+      return new Promise(resolve => viewer.camera.flyTo({
         destination: Cesium.Cartesian3.fromDegrees(-98.5, 38.5, 5000000),
         orientation: { heading: 0, pitch: Cesium.Math.toRadians(-90), roll: 0 },
-        duration: 1.5
-      });
+        duration: 1.5,
+        complete: resolve,
+        cancel: resolve
+      }));
+    }
+    return new Promise(resolve => viewer.camera.flyTo({
+      destination: Cesium.Rectangle.fromDegrees(-125.0, 24.0, -66.0, 50.0),
+      duration: 1.5,
+      complete: resolve,
+      cancel: resolve
+    }));
+  }
+
+  function configuredPlaySites() {
+    const byName = new Map(sites.map(site => [String(site.officialName || "").trim().toLowerCase(), site]));
+    return PLAY_DATACENTER_NAMES.map(name => byName.get(String(name).trim().toLowerCase())).filter(Boolean).slice(0, 3);
+  }
+
+  function updatePlayButton() {
+    if (!els.play) return;
+    els.play.setAttribute("aria-pressed", String(playActive));
+    els.play.textContent = playActive ? "■ Stop PLAY" : "▶ Play 3 data centers";
+  }
+
+  function waitForPlay(ms, runId) {
+    return new Promise(resolve => {
+      const started = performance.now();
+      const tick = () => {
+        if (!playActive || runId !== playRunId || performance.now() - started >= ms) return resolve();
+        setTimeout(tick, 120);
+      };
+      tick();
+    });
+  }
+
+  function playZoomOut(location, duration = 1.0) {
+    if (!location) return Promise.resolve();
+    return zoomToLocation(location, duration, PLAY_ZOOM_OUT_KM);
+  }
+
+  function stopPlayTour() {
+    playActive = false;
+    playRunId += 1;
+    try { viewer?.camera?.cancelFlight?.(); } catch (_) {}
+    updatePlayButton();
+  }
+
+  async function runPlayTour() {
+    if (playActive) { stopPlayTour(); return; }
+    const tourSites = configuredPlaySites();
+    if (!tourSites.length) {
+      setStatus("PLAY list is empty. Edit PLAY_DATACENTER_NAMES near the top of app.js.");
       return;
     }
-    viewer.camera.flyTo({
-      destination: Cesium.Rectangle.fromDegrees(-125.0, 24.0, -66.0, 50.0),
-      duration: 1.5
-    });
+    playActive = true;
+    const runId = ++playRunId;
+    updatePlayButton();
+
+    // Keep the tour in 2D so flood and wildfire layers remain the visual focus.
+    if (threeDMode) {
+      if (els.threeD) els.threeD.checked = false;
+      await set3DMode(false, { automatic: true });
+    }
+
+    for (let i = 0; i < tourSites.length; i += 1) {
+      if (!playActive || runId !== playRunId) break;
+      const site = tourSites[i];
+      const from = activeLocation() || site;
+      setStatus(`PLAY ${i + 1}/${tourSites.length}: zooming out before ${site.officialName}…`);
+      await playZoomOut(from, 0.95);
+      if (!playActive || runId !== playRunId) break;
+
+      setStatus(`PLAY ${i + 1}/${tourSites.length}: loading ${site.officialName}…`);
+      await selectSite(site, 1.35, { waitForHazards: true });
+      if (!playActive || runId !== playRunId) break;
+
+      setStatus(`PLAY ${i + 1}/${tourSites.length}: flood and wildfire layers loaded for ${site.officialName}.`);
+      await waitForPlay(PLAY_DWELL_MS, runId);
+    }
+
+    if (runId === playRunId) {
+      playActive = false;
+      updatePlayButton();
+      setStatus("PLAY finished. Flood and wildfire layers remain on the last data center.");
+    }
   }
 
   function parseCoordinates(text) {
@@ -1434,6 +1563,7 @@
 
   async function handleSearch(event) {
     event.preventDefault();
+    if (playActive) stopPlayTour();
     const text = String(els.searchInput?.value || "").trim();
     if (!text) return;
     setSearchMessage("Searching…");
@@ -1463,13 +1593,74 @@
     }
   }
 
+  function installRiskWidgetDragging() {
+    if (!els.riskWidget) return;
+    const handles = [els.riskWidgetIcon, els.riskWidgetDragHandle].filter(Boolean);
+    for (const handle of handles) {
+      let start = null;
+      handle.addEventListener("pointerdown", event => {
+        if (event.button !== 0 || event.target === els.riskWidgetMinimize) return;
+        const rect = els.riskWidget.getBoundingClientRect();
+        start = { x: event.clientX, y: event.clientY, left: rect.left, top: rect.top, moved: false };
+        els.riskWidget.style.left = `${rect.left}px`;
+        els.riskWidget.style.top = `${rect.top}px`;
+        els.riskWidget.style.right = "auto";
+        els.riskWidget.style.bottom = "auto";
+        els.riskWidget.classList.add("dragging");
+        handle.setPointerCapture?.(event.pointerId);
+      });
+      handle.addEventListener("pointermove", event => {
+        if (!start) return;
+        const dx = event.clientX - start.x;
+        const dy = event.clientY - start.y;
+        if (Math.hypot(dx, dy) > 5) start.moved = true;
+        const rect = els.riskWidget.getBoundingClientRect();
+        const maxLeft = Math.max(0, window.innerWidth - rect.width);
+        const maxTop = Math.max(0, window.innerHeight - rect.height);
+        els.riskWidget.style.left = `${Math.max(0, Math.min(maxLeft, start.left + dx))}px`;
+        els.riskWidget.style.top = `${Math.max(0, Math.min(maxTop, start.top + dy))}px`;
+      });
+      const finish = event => {
+        if (!start) return;
+        riskWidgetDraggedRecently = start.moved;
+        start = null;
+        els.riskWidget.classList.remove("dragging");
+        try { handle.releasePointerCapture?.(event.pointerId); } catch (_) {}
+        if (riskWidgetDraggedRecently) setTimeout(() => { riskWidgetDraggedRecently = false; }, 180);
+      };
+      handle.addEventListener("pointerup", finish);
+      handle.addEventListener("pointercancel", finish);
+    }
+  }
+
+  async function maybeAutoSwitch3D() {
+    if (!viewer || playActive || measureActive || auto3DSwitching) return;
+    const height = Number(viewer.camera?.positionCartographic?.height);
+    if (!Number.isFinite(height)) return;
+    if (!threeDMode && viewer.scene.mode === Cesium.SceneMode.SCENE2D && height <= AUTO_3D_ENTER_HEIGHT_METERS) {
+      auto3DSwitching = true;
+      try {
+        if (els.threeD) els.threeD.checked = true;
+        await set3DMode(true, { automatic: true });
+      } finally { auto3DSwitching = false; }
+    } else if (threeDMode && auto3DActive && height >= AUTO_3D_EXIT_HEIGHT_METERS) {
+      auto3DSwitching = true;
+      try {
+        if (els.threeD) els.threeD.checked = false;
+        await set3DMode(false, { automatic: true });
+      } finally { auto3DSwitching = false; }
+    }
+  }
+
   function wireControls() {
     els.select?.addEventListener("change", () => {
+      if (playActive) stopPlayTour();
       const site = sites.find(s => String(s.id) === String(els.select.value));
       if (site) selectSite(site);
     });
-    els.overview?.addEventListener("click", showOverview);
+    els.overview?.addEventListener("click", () => { if (playActive) stopPlayTour(); showOverview(); });
     els.siteView?.addEventListener("click", () => {
+      if (playActive) stopPlayTour();
       const location = selectedSite || searchedLocation;
       if (location) zoomToLocation(location, 1.1);
     });
@@ -1483,11 +1674,12 @@
       if (els.wildfire.checked && !wildfireSource) refreshHazards();
     });
     els.satellite?.addEventListener("change", () => { if (satelliteLayer) satelliteLayer.show = els.satellite.checked; });
-    els.threeD?.addEventListener("change", () => set3DMode(els.threeD.checked));
+    els.threeD?.addEventListener("change", () => { auto3DActive = false; set3DMode(els.threeD.checked, { automatic: false }); });
     els.searchForm?.addEventListener("submit", handleSearch);
     els.modalClose?.addEventListener("click", () => { if (els.modal) els.modal.hidden = true; });
     els.riskWidgetMinimize?.addEventListener("click", () => setRiskWidgetCollapsed(true));
-    els.riskWidgetIcon?.addEventListener("click", () => setRiskWidgetCollapsed(false));
+    els.riskWidgetIcon?.addEventListener("click", () => { if (!riskWidgetDraggedRecently) setRiskWidgetCollapsed(false); });
+    els.play?.addEventListener("click", runPlayTour);
     els.measureToggle?.addEventListener("click", () => {
       if (measureActive) finishMeasurement();
       else setMeasurementActive(true, measurePoints.length > 0);
@@ -1500,11 +1692,16 @@
     window.addEventListener("keydown", event => {
       if (event.key === "Escape" && measureActive) finishMeasurement();
     });
+    window.addEventListener("resize", clampRiskWidgetToViewport);
   }
 
   async function initialize() {
     await createViewer();
     installScaleBar();
+    if (els.riskLegend) els.riskLegend.innerHTML = riskLegendMarkup();
+    installRiskWidgetDragging();
+    viewer.camera.moveEnd.addEventListener(() => { maybeAutoSwitch3D(); updateScaleBar(true); });
+    updatePlayButton();
     const response = await fetch("data/datacenters.json", { cache: "no-store" });
     if (!response.ok) throw new Error(`Data centers HTTP ${response.status}`);
     sites = await response.json();

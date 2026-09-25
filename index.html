@@ -16,10 +16,16 @@
     <img src="assets/everloop-logo.png" alt="Everloop" />
   </a>
 
-  <aside id="riskWidget" class="risk-widget" aria-label="Physical climate risk score heatmap">
-    <button id="riskWidgetIcon" class="risk-widget-icon" type="button" aria-label="Expand physical climate risk heatmap" title="Physical climate risk scores">▦</button>
+  <aside id="riskWidget" class="risk-widget" aria-label="Scenario analysis">
+    <button id="riskWidgetIcon" class="risk-widget-icon" type="button" aria-label="Expand Scenario analysis" title="Scenario analysis">
+      <span class="risk-widget-icon-shape" aria-hidden="true"></span>
+    </button>
     <div id="riskWidgetPanel" class="risk-widget-panel">
-      <button id="riskWidgetMinimize" class="risk-widget-minimize" type="button" aria-label="Minimize physical climate risk heatmap" title="Minimize">−</button>
+      <div id="riskWidgetDragHandle" class="risk-widget-titlebar" title="Drag to move">
+        <div class="risk-widget-title">Scenario analysis</div>
+        <div id="riskLegend" class="risk-legend-slot"></div>
+      </div>
+      <button id="riskWidgetMinimize" class="risk-widget-minimize" type="button" aria-label="Minimize Scenario analysis" title="Minimize">−</button>
       <div id="riskHeatmapContent" class="risk-heatmap-status">Loading risk scores…</div>
     </div>
   </aside>
@@ -44,8 +50,9 @@
     <div id="siteSummary" class="site-summary">Loading Texas - 7…</div>
 
     <div class="actions">
-      <button id="overviewBtn" type="button">US overview</button>
-      <button id="siteViewBtn" type="button">Selected site</button>
+      <button id="overviewBtn" type="button">All data centers</button>
+      <button id="siteViewBtn" type="button">Select datacenter</button>
+      <button id="playBtn" class="play-btn" type="button" aria-pressed="false">▶ Play 3 data centers</button>
     </div>
 
     <div class="toggles analytical-toggles">

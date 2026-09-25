@@ -1,0 +1,31 @@
+PLAY TOUR CONFIGURATION
+=======================
+
+Open app.js near the top and edit:
+
+const PLAY_DATACENTER_NAMES = [
+  "Meta El Paso Data Center",
+  "Stargate Abilene",
+  "Hanover Technology Park"
+];
+
+Replace those three strings with any three exact `officialName` values from:
+
+  data/datacenters.json
+
+The order in the array is the order used by PLAY.
+
+Timing:
+
+  const PLAY_DWELL_MS = 4500;
+
+4500 means the loaded flood/wildfire view remains visible for 4.5 seconds before the next transition.
+
+The tour performs:
+  1. zoom out from the current data center
+  2. zoom in to the next configured data center
+  3. wait for the core flood and wildfire requests to finish
+  4. keep the loaded view visible for PLAY_DWELL_MS
+  5. continue to the next data center
+
+Press Stop PLAY at any time to cancel the tour.

@@ -76,7 +76,7 @@ Selecting a data center (or a searched coordinate) now also requests the Weather
 - SSP2 / RCP4.5: 2030, 2040, 2050
 - SSP5 / RCP8.5: 2030, 2040, 2050
 
-The panel is anchored in the upper-right of the map. On desktop its expanded size is **30vw × 30vh**. The `−` button reduces it to a small heatmap icon; clicking the icon expands it again. The expanded panel intentionally contains only the heatmap (plus the minimize control).
+The **Scenario analysis** panel starts below the Everloop logo, can be dragged anywhere on the screen, and can be minimized to the supplied clock-style icon. On desktop its target size is **33vw × 36vh** (with minimum dimensions so the complete heatmap remains visible). The complete heatmap is fitted without scrollbars and includes the exact Cotton Risk Management **Risk rating 1–5** legend.
 
 The rating conversion and cell colors are copied from the Cotton Risk Management implementation. API responses are cached in the browser for the current session.
 
@@ -98,7 +98,7 @@ A complete, deployable Worker is included as `cloudflare/worker.js`. Setup instr
 
 This build changes the preferred/default basemap to **Google Satellite 2D** using CesiumJS `Google2DImageryProvider` and Cesium ion asset `3830184`.
 
-A new **Photorealistic 3D buildings** checkbox is off by default. When enabled, the viewer morphs from the flat 2D map to Cesium 3D and streams **Google Photorealistic 3D Tiles** at a high visual-detail setting (`maximumScreenSpaceError = 6`). Turning the checkbox off returns to the original 2D risk-map view and its corrected map centering.
+A new **Photorealistic 3D buildings** checkbox is off by default. When enabled, the viewer morphs from the flat 2D map to Cesium 3D and streams **Google Photorealistic 3D Tiles** at a high visual-detail setting (`maximumScreenSpaceError = 2`). Turning the checkbox off returns to the original 2D risk-map view and its corrected map centering.
 
 The 2D Google imagery and 3D tiles use the latest imagery/content currently published by Google for each location; imagery capture dates vary by area and cannot be forced by the application.
 
@@ -120,3 +120,26 @@ Use **Measure distance** in the lower-left corner to measure horizontal ground d
 5. Click **Finish** (or press Escape) to keep the measurement visible, or **Clear** to remove it.
 
 Distance calculations use WGS84 geodesic surface distance between the clicked horizontal positions. In photorealistic 3D, clicks can be placed on visible 3D tiles, but the reported value remains horizontal ground distance rather than slope/vertical distance.
+
+
+## Three-data-center PLAY tour
+
+The left control panel includes **Play 3 data centers**. The tour zooms out, zooms into each configured data center, waits for the core flood and wildfire requests to finish, keeps the location visible for a few seconds, then moves to the next location. Press **Stop PLAY** at any time.
+
+To choose the three locations yourself, open `app.js` and edit this block near the top:
+
+```js
+const PLAY_DATACENTER_NAMES = [
+  "Meta El Paso Data Center",
+  "Stargate Abilene",
+  "Hanover Technology Park"
+];
+```
+
+Use the exact `officialName` values from `data/datacenters.json`. You can also change `PLAY_DWELL_MS` to control how long each loaded location remains on screen.
+
+## Automatic close-zoom 3D
+
+When the user zooms very close in 2D, the app automatically loads Google Photorealistic 3D Tiles (when available through the configured Cesium ion token). It uses `maximumScreenSpaceError = 2` for higher visual detail. If the automatically activated 3D view is zoomed back out, the app returns to 2D. The manual **Photorealistic 3D buildings** checkbox remains available.
+
+Optional flood-provider failures are written to the browser console but are no longer displayed as an ERROR/warning line in the left menu.
